@@ -3,8 +3,8 @@
 Every branch of your repository, in one graph. Ramify starts a small local server on top of the `git` you already have and opens the UI in your browser.
 
 ```sh
-npx ramify            # in a repository
-npx ramify ~/code/app # or point it at one
+npx ramify-git            # in a repository
+npx ramify-git ~/code/app # or point it at one
 ```
 
 Options: `--port N` to pick a port, `--no-open` to only print the URL.

@@ -1,5 +1,5 @@
 {
-  "name": "ramify",
+  "name": "ramify-git",
   "version": "0.1.0",
   "description": "Every branch of your repository in one graph. Runs a local server on top of your installed git and opens the UI in your browser.",
   "license": "MIT",

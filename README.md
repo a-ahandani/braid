@@ -18,7 +18,7 @@ No account, no cloud services, no telemetry. MIT licensed; see THIRD-PARTY-NOTIC
 ## Run it from npm, on any OS
 
 ```sh
-npx ramify            # inside a repository
+npx ramify-git            # inside a repository
 ```
 
 This starts a small local server on top of your installed `git` and opens the same UI in your browser. Native speed, your SSH keys and credential helpers, rebase, cherry-pick and revert included. Needs Node 20+ and `git`. Nothing is downloaded through a browser, so there is no Gatekeeper step. Details in `cli/README.md`.

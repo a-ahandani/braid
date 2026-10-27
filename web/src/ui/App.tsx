@@ -503,7 +503,7 @@ export function App() {
               )}
               <p class="note">Nothing leaves your machine except avatar lookups on gravatar.com and, when you use them, fetch, pull and push through the CORS proxy you set under Settings.</p>
               <p class="note">
-                For full speed and your SSH keys, run <code>npx ramify</code> inside a repository instead.
+                For full speed and your SSH keys, run <code>npx ramify-git</code> inside a repository instead.
               </p>
             </>
           )}
