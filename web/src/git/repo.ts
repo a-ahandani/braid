@@ -7,7 +7,7 @@ export interface Ctx {
   fs: FsClient
   dir: string
   cache: object
-  removeTree?: (path: string) => Promise<void>
+  fallbackAuthor?: () => { name: string; email: string } | undefined
 }
 
 export interface Commit {
@@ -107,7 +107,10 @@ async function readStashes(ctx: Ctx): Promise<StashInfo[]> {
 }
 
 export async function status(ctx: Ctx): Promise<WorkStatus> {
-  const matrix = await git.statusMatrix({ fs: ctx.fs, dir: ctx.dir, cache: ctx.cache })
+  return mapStatus(await git.statusMatrix({ fs: ctx.fs, dir: ctx.dir }))
+}
+
+export function mapStatus(matrix: [string, number, number, number][]): WorkStatus {
   const out: WorkStatus = { staged: [], unstaged: [] }
   for (const [path, head, workdir, stage] of matrix) {
     if (head === 1 && workdir === 1 && stage === 1) continue
@@ -264,7 +267,6 @@ async function stagedBlob(ctx: Ctx, path: string): Promise<string> {
   const oids = await git.walk({
     fs: ctx.fs,
     dir: ctx.dir,
-    cache: ctx.cache,
     trees: [git.STAGE()],
     map: async (filepath, [entry]) => (filepath === path && entry ? await entry.oid() : undefined),
   })
@@ -298,6 +300,7 @@ export async function diffLines(ctx: Ctx, area: DiffArea, path: string): Promise
     newText = await workdirText(ctx, path)
   }
   if (oldText.includes('\0') || newText.includes('\0')) return [{ type: 'note', text: 'Binary file' }]
+  if (oldText.length > 1_000_000 || newText.length > 1_000_000) return [{ type: 'note', text: 'File too large to diff' }]
   const patch = structuredPatch(path, path, oldText, newText, undefined, undefined, { context: 3 })
   const out: DiffLine[] = []
   for (const h of patch.hunks) {
@@ -312,55 +315,75 @@ export async function diffLines(ctx: Ctx, area: DiffArea, path: string): Promise
 async function author(ctx: Ctx) {
   const name = await git.getConfig({ fs: ctx.fs, dir: ctx.dir, path: 'user.name' })
   const email = await git.getConfig({ fs: ctx.fs, dir: ctx.dir, path: 'user.email' })
-  if (!name || !email) throw new Error('Set user.name and user.email in the repository or global git config first')
-  return { name, email }
+  if (name && email) return { name, email }
+  const fallback = ctx.fallbackAuthor?.()
+  if (fallback?.name && fallback.email) return fallback
+  throw new Error('Run `git config user.name` and `git config user.email` inside this repository, or fill in your name and email under Settings. The browser cannot read your global git config.')
+}
+
+async function indexMode(ctx: Ctx, path: string): Promise<number | undefined> {
+  const modes = await git.walk({
+    fs: ctx.fs,
+    dir: ctx.dir,
+    trees: [git.STAGE()],
+    map: async (filepath, [entry]) => (filepath === path && entry ? await entry.mode() : undefined),
+  })
+  return (modes as (number | undefined)[]).find((m) => m !== undefined)
 }
 
 export async function stage(ctx: Ctx, files: FileChange[]) {
   for (const f of files) {
-    if (f.kind === 'D') await git.remove({ fs: ctx.fs, dir: ctx.dir, filepath: f.path, cache: ctx.cache })
-    else await git.add({ fs: ctx.fs, dir: ctx.dir, filepath: f.path, cache: ctx.cache })
+    if (f.kind === 'D') {
+      await git.remove({ fs: ctx.fs, dir: ctx.dir, filepath: f.path })
+      continue
+    }
+    const mode = f.kind === 'M' ? await indexMode(ctx, f.path) : undefined
+    if (mode) await git.updateIndex({ fs: ctx.fs, dir: ctx.dir, filepath: f.path, mode, add: true })
+    else await git.add({ fs: ctx.fs, dir: ctx.dir, filepath: f.path })
   }
 }
 
 export async function unstage(ctx: Ctx, paths: string[]) {
-  for (const p of paths) await git.resetIndex({ fs: ctx.fs, dir: ctx.dir, filepath: p, cache: ctx.cache })
+  for (const p of paths) await git.resetIndex({ fs: ctx.fs, dir: ctx.dir, filepath: p })
 }
 
 export async function discard(ctx: Ctx, files: FileChange[]) {
   const tracked = files.filter((f) => f.kind !== '?').map((f) => f.path)
   for (const f of files) {
-    if (f.kind === '?') {
-      if (ctx.removeTree) await ctx.removeTree(`${ctx.dir}/${f.path}`)
-      else await (ctx.fs as { promises: { unlink: Function } }).promises.unlink(`${ctx.dir}/${f.path}`)
-    }
+    if (f.kind === '?') await (ctx.fs as { promises: { unlink: Function } }).promises.unlink(`${ctx.dir}/${f.path}`)
   }
   if (tracked.length > 0) {
-    await git.checkout({ fs: ctx.fs, dir: ctx.dir, filepaths: tracked, force: true, cache: ctx.cache })
+    await git.checkout({ fs: ctx.fs, dir: ctx.dir, filepaths: tracked, force: true })
   }
 }
 
 export async function commit(ctx: Ctx, message: string, amend: boolean): Promise<string> {
-  return git.commit({ fs: ctx.fs, dir: ctx.dir, message, author: await author(ctx), amend, cache: ctx.cache })
+  return git.commit({ fs: ctx.fs, dir: ctx.dir, message, author: amend ? undefined : await author(ctx), amend })
 }
 
 export async function checkoutBranch(ctx: Ctx, name: string) {
-  await git.checkout({ fs: ctx.fs, dir: ctx.dir, ref: name, cache: ctx.cache })
+  await git.checkout({ fs: ctx.fs, dir: ctx.dir, ref: name })
 }
 
 export async function checkoutRemote(ctx: Ctx, remoteName: string) {
   const i = remoteName.indexOf('/')
   const remote = remoteName.slice(0, i)
   const branch = remoteName.slice(i + 1)
-  await git.checkout({ fs: ctx.fs, dir: ctx.dir, ref: branch, remote, cache: ctx.cache })
+  await git.checkout({ fs: ctx.fs, dir: ctx.dir, ref: branch, remote })
 }
 
 export async function checkoutCommit(ctx: Ctx, oid: string) {
-  await git.checkout({ fs: ctx.fs, dir: ctx.dir, ref: oid, cache: ctx.cache })
+  await git.checkout({ fs: ctx.fs, dir: ctx.dir, ref: oid })
 }
 
 export async function createBranch(ctx: Ctx, name: string, at: string, checkout: boolean) {
-  await git.branch({ fs: ctx.fs, dir: ctx.dir, ref: name, object: at, checkout })
+  await git.branch({ fs: ctx.fs, dir: ctx.dir, ref: name, object: at })
+  if (checkout) await git.checkout({ fs: ctx.fs, dir: ctx.dir, ref: name })
+}
+
+async function requireClean(ctx: Ctx) {
+  const s = await status(ctx)
+  if (s.staged.length + s.unstaged.length > 0) throw new Error('Commit or stash your changes first')
 }
 
 export async function deleteBranch(ctx: Ctx, name: string) {
@@ -373,7 +396,7 @@ export async function renameBranch(ctx: Ctx, oldName: string, newName: string) {
 
 export async function createTag(ctx: Ctx, name: string, at: string, message: string) {
   if (message.trim()) {
-    await git.annotatedTag({ fs: ctx.fs, dir: ctx.dir, ref: name, object: at, message, tagger: await author(ctx), cache: ctx.cache })
+    await git.annotatedTag({ fs: ctx.fs, dir: ctx.dir, ref: name, object: at, message, tagger: await author(ctx) })
   } else {
     await git.tag({ fs: ctx.fs, dir: ctx.dir, ref: name, object: at })
   }
@@ -398,6 +421,7 @@ export async function stashDrop(ctx: Ctx, index: number) {
 export type MergeOutcome = 'up-to-date' | 'fast-forward' | 'merged'
 
 export async function merge(ctx: Ctx, branch: string, head: string): Promise<MergeOutcome> {
+  await requireClean(ctx)
   const r = await git.merge({
     fs: ctx.fs,
     dir: ctx.dir,
@@ -405,30 +429,33 @@ export async function merge(ctx: Ctx, branch: string, head: string): Promise<Mer
     theirs: branch,
     author: await author(ctx),
     message: `Merge ${branch} into ${head}`,
-    cache: ctx.cache,
+    
   })
-  await git.checkout({ fs: ctx.fs, dir: ctx.dir, ref: head, cache: ctx.cache })
+  await git.checkout({ fs: ctx.fs, dir: ctx.dir, ref: head })
   return r.alreadyMerged ? 'up-to-date' : r.fastForward ? 'fast-forward' : 'merged'
 }
 
 export async function reset(ctx: Ctx, branch: string, oid: string, hard: boolean) {
   await git.writeRef({ fs: ctx.fs, dir: ctx.dir, ref: `refs/heads/${branch}`, value: oid, force: true })
-  if (hard) await git.checkout({ fs: ctx.fs, dir: ctx.dir, ref: branch, force: true, cache: ctx.cache })
+  if (hard) await git.checkout({ fs: ctx.fs, dir: ctx.dir, ref: branch, force: true })
 }
 
 export interface NetSettings {
   corsProxy: string
   username: string
   token: string
+  authorName: string
+  authorEmail: string
 }
 
 function netArgs(ctx: Ctx, s: NetSettings) {
+  if (!s.corsProxy.trim()) throw new Error('Set a CORS proxy under Settings first. Git hosts block direct browser requests, so one is needed for fetch, pull and push.')
   return {
     fs: ctx.fs,
     dir: ctx.dir,
     http,
-    cache: ctx.cache,
-    corsProxy: s.corsProxy || undefined,
+    
+    corsProxy: s.corsProxy.trim(),
     onAuth: () => (s.token ? { username: s.username || 'x-access-token', password: s.token } : undefined),
   }
 }
@@ -440,9 +467,11 @@ export async function fetchAll(ctx: Ctx, s: NetSettings) {
 }
 
 export async function pull(ctx: Ctx, s: NetSettings, head: string) {
+  await requireClean(ctx)
   await git.pull({ ...netArgs(ctx, s), ref: head, author: await author(ctx) })
 }
 
 export async function push(ctx: Ctx, s: NetSettings, head: string) {
-  await git.push({ ...netArgs(ctx, s), ref: head, remote: 'origin' })
+  const remote = (await git.getConfig({ fs: ctx.fs, dir: ctx.dir, path: `branch.${head}.remote` })) ?? 'origin'
+  await git.push({ ...netArgs(ctx, s), ref: head, remote })
 }

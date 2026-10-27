@@ -143,12 +143,15 @@ export function Dialogs(p: DialogProps) {
       )
     case 'settings':
       return (
-        <Frame title="Remote access" onClose={p.onClose}>
-          <div class="label">CORS proxy (git hosts do not allow browser requests directly)</div>
-          <input ref={first} value={net.corsProxy} onInput={(e) => setNet({ ...net, corsProxy: (e.target as HTMLInputElement).value })} />
+        <Frame title="Settings" onClose={p.onClose}>
+          <div class="label">Your name and email for commits (used when the repository has no user.name)</div>
+          <input ref={first} placeholder="Name" value={net.authorName} onInput={(e) => setNet({ ...net, authorName: (e.target as HTMLInputElement).value })} />
+          <input placeholder="Email" value={net.authorEmail} onInput={(e) => setNet({ ...net, authorEmail: (e.target as HTMLInputElement).value })} />
+          <div class="label">CORS proxy, required for fetch, pull and push (git hosts block direct browser requests)</div>
+          <input placeholder="https://your-proxy.example.com" value={net.corsProxy} onInput={(e) => setNet({ ...net, corsProxy: (e.target as HTMLInputElement).value })} />
           <div class="label">Username (optional, defaults to a token login)</div>
           <input value={net.username} onInput={(e) => setNet({ ...net, username: (e.target as HTMLInputElement).value })} />
-          <div class="label">Personal access token (stored in this browser only)</div>
+          <div class="label">Personal access token (kept only until this tab closes)</div>
           <input type="password" value={net.token} onInput={(e) => setNet({ ...net, token: (e.target as HTMLInputElement).value })} />
           <Buttons ok="Save" enabled={true} onOk={() => (p.onSettings(net), p.onClose())} onClose={p.onClose} />
         </Frame>

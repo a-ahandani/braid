@@ -120,8 +120,7 @@ export class FsaFs {
 
   async mkdir(path: string): Promise<void> {
     const parts = split(path)
-    if (this.dirs.has(parts.join('/'))) throw fsError('EEXIST', path)
-    const [d, name] = await this.parentAndName(path)
+    const [d, name] = await this.parentAndName(path, true)
     let existed = true
     try {
       await d.getDirectoryHandle(name)
@@ -163,11 +162,4 @@ export class FsaFs {
     }
   }
 
-  async removeTree(path: string): Promise<void> {
-    const [d, name] = await this.parentAndName(path)
-    await d.removeEntry(name, { recursive: true })
-    for (const key of [...this.dirs.keys()]) {
-      if (key === split(path).join('/') || key.startsWith(split(path).join('/') + '/')) this.dirs.delete(key)
-    }
-  }
 }

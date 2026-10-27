@@ -1,5 +1,5 @@
 import { get, set } from 'idb-keyval'
-import { useCallback, useEffect, useMemo, useState } from 'preact/hooks'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'preact/hooks'
 import { FsaFs } from '../fs/fsa'
 import { demoRepo } from '../git/demo'
 import { layout, type RowLayout } from '../git/graph'
@@ -48,13 +48,19 @@ function buildView(ctx: Ctx, data: RepoData, limit: number): View {
 }
 
 function loadSettings(): NetSettings {
+  const base: NetSettings = { corsProxy: '', username: '', token: '', authorName: '', authorEmail: '' }
   try {
-    const raw = localStorage.getItem(SETTINGS_KEY)
-    if (raw) return JSON.parse(raw)
+    const saved = JSON.parse(localStorage.getItem(SETTINGS_KEY) ?? '{}')
+    return { ...base, ...saved, token: sessionStorage.getItem(SETTINGS_KEY + '.token') ?? '' }
   } catch {
-    /* no settings yet */
+    return base
   }
-  return { corsProxy: 'https://cors.isomorphic-git.org', username: '', token: '' }
+}
+
+function saveSettings(s: NetSettings) {
+  const { token, ...rest } = s
+  localStorage.setItem(SETTINGS_KEY, JSON.stringify(rest))
+  sessionStorage.setItem(SETTINGS_KEY + '.token', token)
 }
 
 export function App() {
@@ -76,6 +82,12 @@ export function App() {
   const [scrollTo, setScrollTo] = useState<number>()
   const [recent, setRecent] = useState<FileSystemDirectoryHandle[]>([])
   const [settings, setSettings] = useState<NetSettings>(loadSettings)
+  const settingsRef = useRef(settings)
+  settingsRef.current = settings
+  const fallbackAuthor = () => {
+    const s = settingsRef.current
+    return s.authorName && s.authorEmail ? { name: s.authorName, email: s.authorEmail } : undefined
+  }
 
   useEffect(() => {
     get<FileSystemDirectoryHandle[]>('recent').then((r) => r && setRecent(r))
@@ -111,7 +123,7 @@ export function App() {
     try {
       applyData(ctx, await repo.load(ctx), repo.PAGE, true)
     } catch (e) {
-      fail('This folder is not a git repository', e)
+      fail('Could not read the repository', e)
     } finally {
       setBusy(undefined)
     }
@@ -121,10 +133,11 @@ export function App() {
     const perm = await handle.requestPermission({ mode: 'readwrite' })
     if (perm !== 'granted') return
     const fs = new FsaFs(handle)
-    const list = [handle, ...recent.filter((h) => h.name !== handle.name)].slice(0, 10)
+    const same = await Promise.all(recent.map((h) => h.isSameEntry(handle).catch(() => false)))
+    const list = [handle, ...recent.filter((_, i) => !same[i])].slice(0, 10)
     setRecent(list)
     await set('recent', list)
-    await openCtx({ fs, dir: '/', cache: {}, removeTree: (p) => fs.removeTree(p) })
+    await openCtx({ fs, dir: '/', cache: {}, fallbackAuthor })
   }
 
   const pickFolder = async () => {
@@ -145,18 +158,26 @@ export function App() {
     }
   }, [view, applyData])
 
-  const run = async (label: string, fn: () => Promise<unknown>, after?: (r: unknown) => void) => {
+  const run = async (label: string, fn: () => Promise<unknown>, opts: { after?: (r: unknown) => void; statusOnly?: boolean } = {}) => {
     if (!view || busy) return
     setBusy(label)
     try {
       const r = await fn()
-      after?.(r)
+      opts.after?.(r)
     } catch (e) {
       fail('Git could not do that', e)
     } finally {
       setBusy(undefined)
     }
-    await reload()
+    if (opts.statusOnly) {
+      try {
+        applyData(view.ctx, { ...view.data, status: await repo.status(view.ctx) }, view.limit, false)
+      } catch (e) {
+        fail('Could not read the repository', e)
+      }
+    } else {
+      await reload()
+    }
   }
 
   useEffect(() => {
@@ -242,11 +263,18 @@ export function App() {
   const doCommit = () => {
     if (!view || !summary.trim()) return
     const msg = description.trim() ? `${summary.trim()}\n\n${description.trim()}` : summary.trim()
-    run('Committing', () => repo.commit(view.ctx, msg, amend), () => {
-      setSummary('')
-      setDescription('')
-      setAmend(false)
+    run('Committing', () => repo.commit(view.ctx, msg, amend), {
+      after: () => {
+        setSummary('')
+        setDescription('')
+        setAmend(false)
+      },
     })
+  }
+
+  const mergeInto = (name: string) => {
+    const v = view!
+    return run('Merging', () => repo.merge(v.ctx, name, head!), { after: (r) => r === 'up-to-date' && setToast(`Already up to date with ${name}`) })
   }
 
   const branchItems = (name: string, oid: string, isHead: boolean): MenuItem[] => {
@@ -254,7 +282,7 @@ export function App() {
     const items: MenuItem[] = []
     if (!isHead) {
       items.push({ label: `Switch to ${name}`, onClick: () => run('Switching branch', () => repo.checkoutBranch(v.ctx, name)) })
-      if (head) items.push({ label: `Merge ${name} into ${head}`, onClick: () => run('Merging', () => repo.merge(v.ctx, name, head), (r) => r === 'up-to-date' && setToast(`Already up to date with ${name}`)) })
+      if (head) items.push({ label: `Merge ${name} into ${head}`, onClick: () => mergeInto(name) })
     }
     items.push({ label: `Rename ${name}`, onClick: () => setDialog({ kind: 'rename', old: name }) })
     items.push({ label: 'New branch from here', onClick: () => setDialog({ kind: 'branch', at: oid }) })
@@ -264,6 +292,25 @@ export function App() {
       items.push({ label: `Delete ${name}`, danger: true, onClick: () => confirm(`Delete "${name}"? This cannot be undone.`, () => run('Deleting branch', () => repo.deleteBranch(v.ctx, name))) })
     }
     return items
+  }
+
+  const remoteItems = (name: string): MenuItem[] => {
+    const v = view!
+    return [
+      { label: `Switch to ${name}`, onClick: () => run('Switching branch', () => repo.checkoutRemote(v.ctx, name)) },
+      ...(head ? [{ label: `Merge ${name} into ${head}`, onClick: () => mergeInto(name) }] : []),
+      { label: 'Copy name', onClick: () => copy(name) },
+    ]
+  }
+
+  const tagItems = (name: string, oid: string): MenuItem[] => {
+    const v = view!
+    return [
+      { label: `Check out ${name} (no branch)`, onClick: () => run('Checking out', () => repo.checkoutCommit(v.ctx, oid)) },
+      { label: 'Copy name', onClick: () => copy(name) },
+      { sep: true },
+      { label: `Delete tag ${name}`, danger: true, onClick: () => confirm(`Delete "${name}"? This cannot be undone.`, () => run('Deleting tag', () => repo.deleteTag(v.ctx, name))) },
+    ]
   }
 
   const stashItems = (index: number, message: string): MenuItem[] => {
@@ -285,18 +332,22 @@ export function App() {
     if (c.kind === 'wip') {
       items = [
         { label: 'Stash everything', onClick: () => setDialog({ kind: 'stash' }) },
-        { label: 'Stage everything', onClick: () => run('Staging', () => repo.stage(v.ctx, v.data.status.unstaged)) },
+        { label: 'Stage everything', onClick: () => run('Staging', () => repo.stage(v.ctx, v.data.status.unstaged), { statusOnly: true }) },
         { sep: true },
         {
           label: 'Throw away all changes',
           danger: true,
           onClick: () =>
             confirm('Every staged, unstaged and untracked change in the working tree will be lost. Continue?', () =>
-              run('Discarding', async () => {
-                await repo.unstage(v.ctx, v.data.status.staged.map((f) => f.path))
-                const st = await repo.status(v.ctx)
-                await repo.discard(v.ctx, st.unstaged)
-              }),
+              run(
+                'Discarding',
+                async () => {
+                  await repo.unstage(v.ctx, v.data.status.staged.map((f) => f.path))
+                  const st = await repo.status(v.ctx)
+                  await repo.discard(v.ctx, st.unstaged)
+                },
+                { statusOnly: true },
+              ),
             ),
         },
       ]
@@ -307,29 +358,16 @@ export function App() {
       const refs = view.data.refsByOid.get(c.id) ?? []
       const isHead = view.data.headOid === c.id
       for (const l of refs) {
-        if (l.kind === 'head' && !l.current) items.push({ label: `Switch to ${l.name}`, onClick: () => run('Switching branch', () => repo.checkoutBranch(v.ctx, l.name)) })
-        if (l.kind === 'remote') items.push({ label: `Switch to ${l.name}`, onClick: () => run('Switching branch', () => repo.checkoutRemote(v.ctx, l.name)) })
+        if (l.kind === 'head') items.push(...branchItems(l.name, c.id, l.current ?? false).filter((i) => i.label !== 'New branch from here'))
+        if (l.kind === 'remote') items.push(...remoteItems(l.name))
+        if (l.kind === 'tag') items.push(...tagItems(l.name, c.id))
+        items.push({ sep: true })
       }
       if (!isHead) items.push({ label: 'Check out here (no branch)', onClick: () => run('Checking out', () => repo.checkoutCommit(v.ctx, c.id)) })
       items.push({ label: 'New branch from here', onClick: () => setDialog({ kind: 'branch', at: c.id }) })
       items.push({ label: 'New tag here', onClick: () => setDialog({ kind: 'tag', at: c.id }) })
+      if (head && !isHead) items.push({ label: `Reset ${head} to this commit...`, onClick: () => setDialog({ kind: 'reset', at: c.id }) })
       items.push({ sep: true })
-      if (head) {
-        for (const l of refs) {
-          if ((l.kind === 'head' && !l.current) || l.kind === 'remote') {
-            items.push({ label: `Merge ${l.name} into ${head}`, onClick: () => run('Merging', () => repo.merge(v.ctx, l.name, head), (r) => r === 'up-to-date' && setToast(`Already up to date with ${l.name}`)) })
-          }
-        }
-        if (!isHead) items.push({ label: `Reset ${head} to this commit...`, onClick: () => setDialog({ kind: 'reset', at: c.id }) })
-      }
-      items.push({ sep: true })
-      for (const l of refs) {
-        if (l.kind === 'head' && !l.current) {
-          items.push({ label: `Rename ${l.name}`, onClick: () => setDialog({ kind: 'rename', old: l.name }) })
-          items.push({ label: `Delete ${l.name}`, danger: true, onClick: () => confirm(`Delete "${l.name}"? This cannot be undone.`, () => run('Deleting branch', () => repo.deleteBranch(v.ctx, l.name))) })
-        }
-        if (l.kind === 'tag') items.push({ label: `Delete tag ${l.name}`, danger: true, onClick: () => confirm(`Delete "${l.name}"? This cannot be undone.`, () => run('Deleting tag', () => repo.deleteTag(v.ctx, l.name))) })
-      }
       items.push({ label: 'Copy full hash', onClick: () => copy(c.id) })
     }
     setMenu({ x: e.clientX, y: e.clientY, items })
@@ -338,8 +376,8 @@ export function App() {
   const fileMenu = (e: MouseEvent, f: FileChange, area: DiffArea) => {
     const v = view!
     const items: MenuItem[] = []
-    if (area.kind === 'unstaged') items.push({ label: 'Stage', onClick: () => run('Staging', () => repo.stage(v.ctx, [f])) })
-    if (area.kind === 'staged') items.push({ label: 'Unstage', onClick: () => run('Unstaging', () => repo.unstage(v.ctx, [f.path])) })
+    if (area.kind === 'unstaged') items.push({ label: 'Stage', onClick: () => run('Staging', () => repo.stage(v.ctx, [f]), { statusOnly: true }) })
+    if (area.kind === 'staged') items.push({ label: 'Unstage', onClick: () => run('Unstaging', () => repo.unstage(v.ctx, [f.path]), { statusOnly: true }) })
     items.push({ label: 'Copy path', onClick: () => copy(f.path) })
     if (area.kind === 'unstaged') {
       items.push({ sep: true })
@@ -351,7 +389,7 @@ export function App() {
   const discardFiles = (files: FileChange[]) => {
     const v = view!
     const what = files.length === 1 ? `Unstaged edits to "${files[0].path}" will be lost. Continue?` : `Unstaged edits to ${files.length} files will be lost. Continue?`
-    confirm(what, () => run('Discarding', () => repo.discard(v.ctx, files)))
+    confirm(what, () => run('Discarding', () => repo.discard(v.ctx, files), { statusOnly: true }))
   }
 
   const pillDoubleClick = (l: RefLabel) => {
@@ -425,10 +463,25 @@ export function App() {
               ))}
             </div>
           )}
-          <p class="note">Nothing leaves your machine except avatar lookups on gravatar.com and, when you use them, fetch, pull and push through the CORS proxy set in Remote access.</p>
+          <p class="note">Nothing leaves your machine except avatar lookups on gravatar.com and, when you use them, fetch, pull and push through the CORS proxy you set under Settings.</p>
           {busy && <p class="busy">{busy}...</p>}
         </div>
-        {dialog && <Dialogs dialog={dialog} settings={settings} onClose={() => setDialog(undefined)} onCreateBranch={() => {}} onCreateTag={() => {}} onRename={() => {}} onStash={() => {}} onReset={() => {}} onSettings={setSettings} />}
+        {dialog && (
+          <Dialogs
+            dialog={dialog}
+            settings={settings}
+            onClose={() => setDialog(undefined)}
+            onCreateBranch={() => {}}
+            onCreateTag={() => {}}
+            onRename={() => {}}
+            onStash={() => {}}
+            onReset={() => {}}
+            onSettings={(s) => {
+              setSettings(s)
+              saveSettings(s)
+            }}
+          />
+        )}
       </div>
     )
   }
@@ -438,7 +491,7 @@ export function App() {
   const currentColor = current ? laneColor(v.layout[v.indexOf.get(current.id)!].column) : 'var(--lane-0)'
   const wipCount = v.data.status.staged.length + v.data.status.unstaged.length
   const dirty = wipCount > 0
-  const net = (label: string, fn: () => Promise<unknown>) => run(label, fn, () => setToast(`${label} done`))
+  const net = (label: string, fn: () => Promise<unknown>) => run(label, fn, { after: () => setToast(`${label} done`) })
 
   return (
     <div class="app">
@@ -474,7 +527,7 @@ export function App() {
         <button class={showRight ? 'on' : ''} onClick={() => setShowRight(!showRight)} title="Toggle detail panel (⌘K)">
           ▣
         </button>
-        <button onClick={() => setDialog({ kind: 'settings' })} title="Remote access settings">
+        <button onClick={() => setDialog({ kind: 'settings' })} title="Settings: author and remote access">
           ⚙
         </button>
         <button onClick={() => reload()} title="Refresh">
@@ -494,29 +547,8 @@ export function App() {
           onCheckout={(name) => run('Switching branch', () => repo.checkoutBranch(v.ctx, name))}
           onCheckoutRemote={(name) => run('Switching branch', () => repo.checkoutRemote(v.ctx, name))}
           onBranchMenu={(e, name, oid, isHead) => setMenu({ x: e.clientX, y: e.clientY, items: branchItems(name, oid, isHead) })}
-          onRemoteMenu={(e, name) =>
-            setMenu({
-              x: e.clientX,
-              y: e.clientY,
-              items: [
-                { label: `Switch to ${name}`, onClick: () => run('Switching branch', () => repo.checkoutRemote(v.ctx, name)) },
-                ...(head ? [{ label: `Merge ${name} into ${head}`, onClick: () => run('Merging', () => repo.merge(v.ctx, name, head)) }] : []),
-                { label: 'Copy name', onClick: () => copy(name) },
-              ],
-            })
-          }
-          onTagMenu={(e, name, oid) =>
-            setMenu({
-              x: e.clientX,
-              y: e.clientY,
-              items: [
-                { label: `Check out ${name} (no branch)`, onClick: () => run('Checking out', () => repo.checkoutCommit(v.ctx, oid)) },
-                { label: 'Copy name', onClick: () => copy(name) },
-                { sep: true },
-                { label: `Delete tag ${name}`, danger: true, onClick: () => confirm(`Delete "${name}"? This cannot be undone.`, () => run('Deleting tag', () => repo.deleteTag(v.ctx, name))) },
-              ],
-            })
-          }
+          onRemoteMenu={(e, name) => setMenu({ x: e.clientX, y: e.clientY, items: remoteItems(name) })}
+          onTagMenu={(e, name, oid) => setMenu({ x: e.clientX, y: e.clientY, items: tagItems(name, oid) })}
           onStashMenu={(e, index, message) => setMenu({ x: e.clientX, y: e.clientY, items: stashItems(index, message) })}
         />
         <GraphView
@@ -551,11 +583,11 @@ export function App() {
           onDescription={setDescription}
           onAmend={setAmend}
           onSelectFile={setFileSel}
-          onStage={(files) => run('Staging', () => repo.stage(v.ctx, files))}
-          onUnstage={(paths) => run('Unstaging', () => repo.unstage(v.ctx, paths))}
+          onStage={(files) => run('Staging', () => repo.stage(v.ctx, files), { statusOnly: true })}
+          onUnstage={(paths) => run('Unstaging', () => repo.unstage(v.ctx, paths), { statusOnly: true })}
           onDiscard={discardFiles}
-          onStageAll={() => run('Staging', () => repo.stage(v.ctx, v.data.status.unstaged))}
-          onUnstageAll={() => run('Unstaging', () => repo.unstage(v.ctx, v.data.status.staged.map((f) => f.path)))}
+          onStageAll={() => run('Staging', () => repo.stage(v.ctx, v.data.status.unstaged), { statusOnly: true })}
+          onUnstageAll={() => run('Unstaging', () => repo.unstage(v.ctx, v.data.status.staged.map((f) => f.path)), { statusOnly: true })}
           onCommit={doCommit}
           onCopy={copy}
           onJump={jump}
@@ -575,7 +607,7 @@ export function App() {
           onReset={(at, hard) => head && run('Resetting', () => repo.reset(v.ctx, head, at, hard))}
           onSettings={(s) => {
             setSettings(s)
-            localStorage.setItem(SETTINGS_KEY, JSON.stringify(s))
+            saveSettings(s)
           }}
         />
       )}
