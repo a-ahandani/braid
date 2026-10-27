@@ -5,7 +5,7 @@ export function httpBackend(base: string, token: string): Backend {
   const call = async <T>(op: string, body: object = {}): Promise<T> => {
     const res = await fetch(`${base}/api/${op}`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json', 'x-ramify-token': token },
+      headers: { 'content-type': 'application/json', 'x-ramulus-token': token },
       body: JSON.stringify(body),
     })
     const data = await res.json().catch(() => ({ error: `${res.status} ${res.statusText}` }))

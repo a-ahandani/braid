@@ -10,7 +10,7 @@ let dir
 const sh = (...args) => execFileSync('git', args, { cwd: dir, encoding: 'utf8', env: { ...process.env, GIT_AUTHOR_DATE: '2026-01-01T00:00:00', GIT_COMMITTER_DATE: '2026-01-01T00:00:00' } })
 
 before(() => {
-  dir = mkdtempSync(join(tmpdir(), 'ramify-cli-'))
+  dir = mkdtempSync(join(tmpdir(), 'ramulus-cli-'))
   sh('init', '-q', '-b', 'main')
   sh('config', 'user.name', 'Test')
   sh('config', 'user.email', 't@example.com')

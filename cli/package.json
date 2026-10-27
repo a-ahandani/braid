@@ -1,12 +1,12 @@
 {
-  "name": "ramify-git",
+  "name": "ramulus",
   "version": "0.1.0",
   "description": "Every branch of your repository in one graph. Runs a local server on top of your installed git and opens the UI in your browser.",
   "license": "MIT",
-  "repository": "github:a-ahandani/ramify",
+  "repository": "github:a-ahandani/ramulus",
   "type": "module",
   "bin": {
-    "ramify": "bin/ramify.js"
+    "ramulus": "bin/ramulus.js"
   },
   "files": [
     "bin",

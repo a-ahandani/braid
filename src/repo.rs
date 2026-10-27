@@ -698,7 +698,7 @@ mod tests {
         pub struct Dir(pub std::path::PathBuf);
         impl Dir {
             pub fn new() -> Self {
-                let p = std::env::temp_dir().join(format!("ramify-test-{}", std::process::id()))
+                let p = std::env::temp_dir().join(format!("ramulus-test-{}", std::process::id()))
                     .join(format!("{:?}", std::time::Instant::now()).replace(['{', '}', ' ', ':'], ""));
                 std::fs::create_dir_all(&p).unwrap();
                 Dir(p)

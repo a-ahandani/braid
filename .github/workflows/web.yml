@@ -28,7 +28,7 @@ jobs:
       - run: npm test
       - run: npm run build
         env:
-          BASE_PATH: /ramify/
+          BASE_PATH: /ramulus/
       - uses: actions/upload-pages-artifact@v3
         with:
           path: web/dist

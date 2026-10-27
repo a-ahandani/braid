@@ -95,7 +95,7 @@ export function createServer({ dir, uiDir, token }) {
       return
     }
     if (url.pathname.startsWith('/api/')) {
-      if (req.headers['x-ramify-token'] !== token) {
+      if (req.headers['x-ramulus-token'] !== token) {
         sendJson(res, 401, { error: 'bad token' })
         return
       }

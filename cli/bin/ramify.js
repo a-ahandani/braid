@@ -9,7 +9,7 @@ import { createServer } from '../lib/server.js'
 
 const args = process.argv.slice(2)
 if (args.includes('-h') || args.includes('--help')) {
-  console.log('Usage: ramify [path] [--port N] [--no-open]\n\nServes the Ramify UI for the repository at path (default: current directory).')
+  console.log('Usage: ramulus [path] [--port N] [--no-open]\n\nServes the Ramulus UI for the repository at path (default: current directory).')
   process.exit(0)
 }
 const portArg = args.indexOf('--port')
@@ -35,7 +35,7 @@ const token = randomBytes(16).toString('hex')
 const server = createServer({ dir, uiDir, token })
 server.listen(port, '127.0.0.1', () => {
   const url = `http://127.0.0.1:${server.address().port}/#${token}`
-  console.log(`Ramify is serving ${dir}\n${url}\nPress Ctrl+C to stop.`)
+  console.log(`Ramulus is serving ${dir}\n${url}\nPress Ctrl+C to stop.`)
   if (!noOpen) {
     const cmd = process.platform === 'darwin' ? 'open' : process.platform === 'win32' ? 'cmd' : 'xdg-open'
     const cmdArgs = process.platform === 'win32' ? ['/c', 'start', '', url] : [url]

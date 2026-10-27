@@ -1,6 +1,6 @@
-# Ramify
+# Ramulus
 
-Ramify (to branch out) is a desktop git client for local repositories, written in Rust with egui and libgit2.
+Ramulus (Latin for a small branch) is a desktop git client for local repositories, written in Rust with egui and libgit2.
 No account, no cloud services, no telemetry. MIT licensed; see THIRD-PARTY-NOTICES.md for bundled components.
 
 ## What it does
@@ -18,39 +18,39 @@ No account, no cloud services, no telemetry. MIT licensed; see THIRD-PARTY-NOTIC
 ## Run it from npm, on any OS
 
 ```sh
-npx ramify-git            # inside a repository
+npx ramulus            # inside a repository
 ```
 
 This starts a small local server on top of your installed `git` and opens the same UI in your browser. Native speed, your SSH keys and credential helpers, rebase, cherry-pick and revert included. Needs Node 20+ and `git`. Nothing is downloaded through a browser, so there is no Gatekeeper step. Details in `cli/README.md`.
 
 ## Use it in the browser with nothing installed
 
-https://a-ahandani.github.io/ramify/ runs the same UI with git reimplemented in JavaScript over the File System Access API (Chrome and Edge). It is slower on large repositories and cannot use SSH; see `web/README.md`.
+https://a-ahandani.github.io/ramulus/ runs the same UI with git reimplemented in JavaScript over the File System Access API (Chrome and Edge). It is slower on large repositories and cannot use SSH; see `web/README.md`.
 
 ## Download (macOS, Apple Silicon)
 
-Get `Ramify-<version>-macos-arm64.dmg` from the [Releases](https://github.com/a-ahandani/ramify/releases) page, open it, and drag `Ramify.app` to Applications. Until the build is notarized, macOS reports a downloaded copy as damaged. After copying it to Applications, clear the download flag once:
+Get `Ramulus-<version>-macos-arm64.dmg` from the [Releases](https://github.com/a-ahandani/ramulus/releases) page, open it, and drag `Ramulus.app` to Applications. Until the build is notarized, macOS reports a downloaded copy as damaged. After copying it to Applications, clear the download flag once:
 
 ```sh
-xattr -d com.apple.quarantine /Applications/Ramify.app
+xattr -d com.apple.quarantine /Applications/Ramulus.app
 ```
 
-To produce a signed and notarized build yourself, run the bundle script with `RAMIFY_SIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)"` and `RAMIFY_NOTARY_PROFILE=<notarytool keychain profile>` set.
+To produce a signed and notarized build yourself, run the bundle script with `RAMULUS_SIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)"` and `RAMULUS_NOTARY_PROFILE=<notarytool keychain profile>` set.
 
 ## Build from source on macOS
 
 Requires Rust (`curl https://sh.rustup.rs | sh`) and `git` on your PATH.
 
 ```sh
-git clone https://github.com/a-ahandani/ramify.git && cd ramify
-scripts/bundle-mac.sh --install     # builds Ramify.app and the .dmg, and copies the app to /Applications
+git clone https://github.com/a-ahandani/ramulus.git && cd ramulus
+scripts/bundle-mac.sh --install     # builds Ramulus.app and the .dmg, and copies the app to /Applications
 ```
 
 Or install just the binary:
 
 ```sh
 cargo install --path .
-ramify /path/to/repo
+ramulus /path/to/repo
 ```
 
 ## Develop
