@@ -15,6 +15,10 @@ No account, no cloud services, no telemetry. MIT licensed; see THIRD-PARTY-NOTIC
 - Author avatars from Gravatar (an MD5 of each author email is sent to gravatar.com; initials are shown when there is no photo)
 - Keyboard: `⌘O` open, `⌘L` fetch, `⌘B` branch, `⌘F` find commit, `⌘⏎` commit, `⌘⇧S` stage all, `⌘⇧U` unstage all, `⌘J`/`⌘K` toggle panels, `↑`/`↓` move selection
 
+## Use it in the browser
+
+The `web/` folder holds a browser version with the same graph and staging flow, built on isomorphic-git and the File System Access API. It runs at https://a-ahandani.github.io/ramify/ in Chrome and Edge, needs nothing installed, and keeps every byte in your browser. See `web/README.md` for what it cannot do compared with the desktop app.
+
 ## Download (macOS, Apple Silicon)
 
 Get `Ramify-<version>-macos-arm64.dmg` from the [Releases](https://github.com/a-ahandani/ramify/releases) page, open it, and drag `Ramify.app` to Applications. Until the build is notarized, macOS reports a downloaded copy as damaged. After copying it to Applications, clear the download flag once:

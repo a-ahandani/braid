@@ -1,0 +1,28 @@
+{
+  "name": "ramify-web",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@isomorphic-git/lightning-fs": "^4.10.3",
+    "buffer": "^6.0.3",
+    "diff": "^9.0.0",
+    "idb-keyval": "^6.3.0",
+    "isomorphic-git": "^1.44.5",
+    "preact": "^11.0.2"
+  },
+  "devDependencies": {
+    "@preact/preset-vite": "^2.10.6",
+    "@types/diff": "^7.0.2",
+    "@types/node": "^24.19.2",
+    "typescript": "~7.0.2",
+    "vite": "^8.3.5",
+    "vitest": "^5.0.5"
+  }
+}
