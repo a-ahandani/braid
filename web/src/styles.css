@@ -799,3 +799,29 @@ textarea:focus {
   color: var(--text-3);
   font-size: 12px;
 }
+
+.banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  background: rgba(240, 138, 36, 0.15);
+  color: var(--orange);
+  font-weight: 600;
+  flex: none;
+}
+
+.banner span {
+  flex: 1;
+}
+
+.toolbar select {
+  background: var(--panel1);
+  border: 1px solid transparent;
+  border-radius: 4px;
+}
+
+.welcome code {
+  font-family: var(--mono);
+  color: var(--text);
+}

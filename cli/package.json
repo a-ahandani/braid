@@ -1,0 +1,24 @@
+{
+  "name": "ramify",
+  "version": "0.1.0",
+  "description": "Every branch of your repository in one graph. Runs a local server on top of your installed git and opens the UI in your browser.",
+  "license": "MIT",
+  "repository": "github:a-ahandani/ramify",
+  "type": "module",
+  "bin": {
+    "ramify": "bin/ramify.js"
+  },
+  "files": [
+    "bin",
+    "lib",
+    "ui"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "cd ../web && npm run build && rm -rf ../cli/ui && cp -R dist ../cli/ui",
+    "prepack": "npm run build",
+    "test": "node --test test/*.test.js"
+  }
+}

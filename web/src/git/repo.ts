@@ -1,6 +1,7 @@
 import git, { type FsClient, type ReadCommitResult } from 'isomorphic-git'
 import http from 'isomorphic-git/http/web'
 import { structuredPatch } from 'diff'
+import type { Backend, RepoState } from './backend'
 import type { NodeKind } from './graph'
 
 export interface Ctx {
@@ -46,11 +47,13 @@ export type ChangeKind = 'A' | 'M' | 'D' | '?'
 export interface FileChange {
   path: string
   kind: ChangeKind
+  conflict?: boolean
 }
 
 export interface WorkStatus {
   staged: FileChange[]
   unstaged: FileChange[]
+  state?: RepoState
 }
 
 export interface RepoData {
@@ -474,4 +477,37 @@ export async function pull(ctx: Ctx, s: NetSettings, head: string) {
 export async function push(ctx: Ctx, s: NetSettings, head: string) {
   const remote = (await git.getConfig({ fs: ctx.fs, dir: ctx.dir, path: `branch.${head}.remote` })) ?? 'origin'
   await git.push({ ...netArgs(ctx, s), ref: head, remote })
+}
+
+export function localBackend(ctx: Ctx, settings: () => NetSettings): Backend {
+  return {
+    native: false,
+    load: (limit) => load(ctx, limit),
+    status: () => status(ctx),
+    commitFiles: (oid) => commitFiles(ctx, oid),
+    diffLines: (area, path) => diffLines(ctx, area, path),
+    stage: (files) => stage(ctx, files),
+    unstage: (paths) => unstage(ctx, paths),
+    discard: (files) => discard(ctx, files),
+    commit: (message, amend) => commit(ctx, message, amend),
+    checkoutBranch: (name) => checkoutBranch(ctx, name),
+    checkoutRemote: (name) => checkoutRemote(ctx, name),
+    checkoutCommit: (oid) => checkoutCommit(ctx, oid),
+    createBranch: (name, at, checkout) => createBranch(ctx, name, at, checkout),
+    deleteBranch: (name) => deleteBranch(ctx, name),
+    renameBranch: (oldName, newName) => renameBranch(ctx, oldName, newName),
+    createTag: (name, at, message) => createTag(ctx, name, at, message),
+    deleteTag: (name) => deleteTag(ctx, name),
+    stashSave: (message) => stashSave(ctx, message),
+    stashApply: (index, pop) => stashApply(ctx, index, pop),
+    stashDrop: (index) => stashDrop(ctx, index),
+    merge: (branch, head) => merge(ctx, branch, head),
+    reset: (head, oid, mode) => {
+      if (mode === 'mixed') throw new Error('Mixed reset is not available in the browser version')
+      return reset(ctx, head, oid, mode === 'hard')
+    },
+    fetchAll: () => fetchAll(ctx, settings()),
+    pull: (_mode, head) => pull(ctx, settings(), head),
+    push: (head) => push(ctx, settings(), head),
+  }
 }

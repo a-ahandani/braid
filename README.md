@@ -15,9 +15,17 @@ No account, no cloud services, no telemetry. MIT licensed; see THIRD-PARTY-NOTIC
 - Author avatars from Gravatar (an MD5 of each author email is sent to gravatar.com; initials are shown when there is no photo)
 - Keyboard: `⌘O` open, `⌘L` fetch, `⌘B` branch, `⌘F` find commit, `⌘⏎` commit, `⌘⇧S` stage all, `⌘⇧U` unstage all, `⌘J`/`⌘K` toggle panels, `↑`/`↓` move selection
 
-## Use it in the browser
+## Run it from npm, on any OS
 
-The `web/` folder holds a browser version with the same graph and staging flow, built on isomorphic-git and the File System Access API. It runs at https://a-ahandani.github.io/ramify/ in Chrome and Edge, needs nothing installed, and keeps every byte in your browser. See `web/README.md` for what it cannot do compared with the desktop app.
+```sh
+npx ramify            # inside a repository
+```
+
+This starts a small local server on top of your installed `git` and opens the same UI in your browser. Native speed, your SSH keys and credential helpers, rebase, cherry-pick and revert included. Needs Node 20+ and `git`. Nothing is downloaded through a browser, so there is no Gatekeeper step. Details in `cli/README.md`.
+
+## Use it in the browser with nothing installed
+
+https://a-ahandani.github.io/ramify/ runs the same UI with git reimplemented in JavaScript over the File System Access API (Chrome and Edge). It is slower on large repositories and cannot use SSH; see `web/README.md`.
 
 ## Download (macOS, Apple Silicon)
 

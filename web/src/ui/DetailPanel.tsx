@@ -31,6 +31,8 @@ export interface DetailProps {
   onCopy: (s: string) => void
   onJump: (oid: string) => void
   onFileMenu: (e: MouseEvent, f: FileChange, area: DiffArea) => void
+  onAbort?: () => void
+  onContinue?: () => void
 }
 
 function kindColor(k: FileChange['kind']): string {
@@ -51,8 +53,8 @@ function FileRow({ f, selected, onClick, actions, onMenu }: { f: FileChange; sel
         onMenu(e)
       }}
     >
-      <span class="k" style={{ color: kindColor(f.kind) }}>
-        {f.kind === '?' ? 'A' : f.kind}
+      <span class="k" style={{ color: f.conflict ? 'var(--orange)' : kindColor(f.kind) }}>
+        {f.conflict ? '!' : f.kind === '?' ? 'A' : f.kind}
       </span>
       <span class="n">{name}</span>
       {dir && <span class="d">{dir}</span>}
@@ -135,8 +137,28 @@ export function DetailPanel(p: DetailProps) {
         ? 'Add a summary first'
         : `Commit ${s.staged.length} file${s.staged.length === 1 ? '' : 's'}`
   const isSel = (area: DiffArea['kind'], path: string) => p.selectedFile?.area.kind === area && p.selectedFile.path === path
+  const state = s.state
+  const conflicts = s.unstaged.filter((f) => f.conflict).length
   return (
     <div class="right">
+      {state && (
+        <div class="banner">
+          <span>
+            {state === 'merge' ? 'Merge' : state === 'rebase' ? 'Rebase' : state === 'cherry-pick' ? 'Cherry-pick' : 'Revert'} in progress
+            {conflicts > 0 ? `, ${conflicts} conflicted file${conflicts === 1 ? '' : 's'} to resolve and stage` : ''}
+          </span>
+          {p.onContinue && (
+            <button disabled={conflicts > 0} onClick={p.onContinue}>
+              Continue
+            </button>
+          )}
+          {p.onAbort && (
+            <button class="danger" onClick={p.onAbort}>
+              Abort
+            </button>
+          )}
+        </div>
+      )}
       <div class="files staging">
         <div class="fhead">
           Unstaged ({s.unstaged.length}){s.unstaged.length > 0 && <button onClick={p.onStageAll}>Stage everything</button>}

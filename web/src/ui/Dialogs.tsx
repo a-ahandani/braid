@@ -1,5 +1,6 @@
 import type { ComponentChildren } from 'preact'
 import { useEffect, useRef, useState } from 'preact/hooks'
+import type { ResetMode } from '../git/backend'
 import type { NetSettings } from '../git/repo'
 
 export type Dialog =
@@ -15,12 +16,13 @@ export type Dialog =
 export interface DialogProps {
   dialog: Dialog
   settings: NetSettings
+  native: boolean
   onClose: () => void
   onCreateBranch: (name: string, at: string, checkout: boolean) => void
   onCreateTag: (name: string, at: string, message: string) => void
   onRename: (old: string, name: string) => void
   onStash: (message: string) => void
-  onReset: (at: string, hard: boolean) => void
+  onReset: (at: string, mode: ResetMode) => void
   onSettings: (s: NetSettings) => void
 }
 
@@ -114,8 +116,9 @@ export function Dialogs(p: DialogProps) {
     case 'reset':
       return (
         <Frame title={`Reset the branch to ${d.at.slice(0, 7)}`} onClose={p.onClose}>
-          <button onClick={() => (p.onReset(d.at, false), p.onClose())}>Soft: keep everything staged and in the working tree</button>
-          <button class="danger" onClick={() => (p.onReset(d.at, true), p.onClose())}>
+          <button onClick={() => (p.onReset(d.at, 'soft'), p.onClose())}>Soft: keep everything staged and in the working tree</button>
+          {p.native && <button onClick={() => (p.onReset(d.at, 'mixed'), p.onClose())}>Mixed: keep the working tree, clear the index</button>}
+          <button class="danger" onClick={() => (p.onReset(d.at, 'hard'), p.onClose())}>
             Hard: drop the index and the working tree
           </button>
           <div class="buttons">

@@ -1,10 +1,11 @@
 import { get, set } from 'idb-keyval'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'preact/hooks'
 import { FsaFs } from '../fs/fsa'
+import type { Backend, PullMode } from '../git/backend'
 import { demoRepo } from '../git/demo'
 import { layout, type RowLayout } from '../git/graph'
-import * as repo from '../git/repo'
-import type { Commit, Ctx, DiffArea, DiffLine, FileChange, NetSettings, RefLabel, RepoData } from '../git/repo'
+import { httpBackend } from '../git/remote'
+import { localBackend, PAGE, type Commit, type Ctx, type DiffArea, type DiffLine, type FileChange, type NetSettings, type RefLabel, type RepoData } from '../git/repo'
 import { laneColor } from './bits'
 import { DetailPanel, type FileSel } from './DetailPanel'
 import { Dialogs, type Dialog } from './Dialogs'
@@ -13,7 +14,7 @@ import { LeftPanel } from './LeftPanel'
 import { Menu, type MenuItem, type MenuState } from './Menu'
 
 interface View {
-  ctx: Ctx
+  be: Backend
   data: RepoData
   rows: Commit[]
   layout: RowLayout[]
@@ -27,8 +28,9 @@ type Sel = { kind: 'wip' } | { kind: 'commit'; oid: string }
 const WIP = '0000000000000000000000000000000000000000'
 const SETTINGS_KEY = 'ramify.net'
 const canPick = typeof window !== 'undefined' && 'showDirectoryPicker' in window
+const helperToken = typeof location !== 'undefined' && /^#[0-9a-f]{32}$/.test(location.hash) ? location.hash.slice(1) : undefined
 
-function buildView(ctx: Ctx, data: RepoData, limit: number): View {
+function buildView(be: Backend, data: RepoData, limit: number): View {
   const rows: Commit[] = [...data.commits]
   if (data.status.staged.length + data.status.unstaged.length > 0) {
     rows.unshift({
@@ -44,7 +46,7 @@ function buildView(ctx: Ctx, data: RepoData, limit: number): View {
   }
   const l = layout(rows)
   const indexOf = new Map(rows.map((c, i) => [c.id, i]))
-  return { ctx, data, rows, layout: l.rows, maxCol: l.maxCol, indexOf, limit }
+  return { be, data, rows, layout: l.rows, maxCol: l.maxCol, indexOf, limit }
 }
 
 function loadSettings(): NetSettings {
@@ -82,12 +84,11 @@ export function App() {
   const [scrollTo, setScrollTo] = useState<number>()
   const [recent, setRecent] = useState<FileSystemDirectoryHandle[]>([])
   const [settings, setSettings] = useState<NetSettings>(loadSettings)
+  const [pullMode, setPullMode] = useState<PullMode>('merge')
   const settingsRef = useRef(settings)
   settingsRef.current = settings
-  const fallbackAuthor = () => {
-    const s = settingsRef.current
-    return s.authorName && s.authorEmail ? { name: s.authorName, email: s.authorEmail } : undefined
-  }
+  const viewRef = useRef(view)
+  viewRef.current = view
 
   useEffect(() => {
     get<FileSystemDirectoryHandle[]>('recent').then((r) => r && setRecent(r))
@@ -100,8 +101,8 @@ export function App() {
 
   const fail = (title: string, e: unknown) => setDialog({ kind: 'error', title, message: e instanceof Error ? e.message : String(e) })
 
-  const applyData = useCallback((ctx: Ctx, data: RepoData, limit: number, fresh: boolean) => {
-    const v = buildView(ctx, data, limit)
+  const applyData = useCallback((be: Backend, data: RepoData, limit: number, fresh: boolean) => {
+    const v = buildView(be, data, limit)
     setView(v)
     setSel((cur) => {
       const hasWip = v.rows[0]?.kind === 'wip'
@@ -118,16 +119,22 @@ export function App() {
     }
   }, [])
 
-  const openCtx = async (ctx: Ctx) => {
+  const openBackend = async (be: Backend) => {
     setBusy('Reading repository')
     try {
-      applyData(ctx, await repo.load(ctx), repo.PAGE, true)
+      applyData(be, await be.load(PAGE), PAGE, true)
     } catch (e) {
       fail('Could not read the repository', e)
     } finally {
       setBusy(undefined)
     }
   }
+
+  const openCtx = (ctx: Ctx) => openBackend(localBackend(ctx, () => settingsRef.current))
+
+  useEffect(() => {
+    if (helperToken) openBackend(httpBackend(location.origin, helperToken))
+  }, [])
 
   const openHandle = async (handle: FileSystemDirectoryHandle) => {
     const perm = await handle.requestPermission({ mode: 'readwrite' })
@@ -137,6 +144,10 @@ export function App() {
     const list = [handle, ...recent.filter((_, i) => !same[i])].slice(0, 10)
     setRecent(list)
     await set('recent', list)
+    const fallbackAuthor = () => {
+      const s = settingsRef.current
+      return s.authorName && s.authorEmail ? { name: s.authorName, email: s.authorEmail } : undefined
+    }
     await openCtx({ fs, dir: '/', cache: {}, fallbackAuthor })
   }
 
@@ -150,13 +161,23 @@ export function App() {
   }
 
   const reload = useCallback(async () => {
-    if (!view) return
+    const v = viewRef.current
+    if (!v) return
     try {
-      applyData(view.ctx, await repo.load(view.ctx, view.limit), view.limit, false)
+      applyData(v.be, await v.be.load(v.limit), v.limit, false)
     } catch (e) {
       fail('Could not read the repository', e)
     }
-  }, [view, applyData])
+  }, [applyData])
+
+  useEffect(() => {
+    if (!view?.be.subscribe) return
+    let timer: ReturnType<typeof setTimeout> | undefined
+    return view.be.subscribe(() => {
+      clearTimeout(timer)
+      timer = setTimeout(reload, 150)
+    })
+  }, [view?.be, reload])
 
   const run = async (label: string, fn: () => Promise<unknown>, opts: { after?: (r: unknown) => void; statusOnly?: boolean } = {}) => {
     if (!view || busy) return
@@ -171,7 +192,7 @@ export function App() {
     }
     if (opts.statusOnly) {
       try {
-        applyData(view.ctx, { ...view.data, status: await repo.status(view.ctx) }, view.limit, false)
+        applyData(view.be, { ...view.data, status: await view.be.status() }, view.limit, false)
       } catch (e) {
         fail('Could not read the repository', e)
       }
@@ -183,7 +204,7 @@ export function App() {
   useEffect(() => {
     if (!view) return
     if (sel?.kind === 'commit') {
-      repo.commitFiles(view.ctx, sel.oid).then(setCommitFiles).catch(() => setCommitFiles([]))
+      view.be.commitFiles(sel.oid).then(setCommitFiles).catch(() => setCommitFiles([]))
     } else {
       setCommitFiles([])
     }
@@ -195,8 +216,8 @@ export function App() {
       return
     }
     let live = true
-    repo
-      .diffLines(view.ctx, fileSel.area, fileSel.path)
+    view.be
+      .diffLines(fileSel.area, fileSel.path)
       .then((d) => live && setDiff(d))
       .catch(() => live && setDiff([]))
     return () => {
@@ -259,11 +280,12 @@ export function App() {
 
   const head = view?.data.headBranch
   const confirm = (message: string, action: () => void) => setDialog({ kind: 'confirm', message, action })
+  const conflictToast = (r: unknown) => r === 'conflicts' && setToast('There are conflicts to resolve')
 
   const doCommit = () => {
     if (!view || !summary.trim()) return
     const msg = description.trim() ? `${summary.trim()}\n\n${description.trim()}` : summary.trim()
-    run('Committing', () => repo.commit(view.ctx, msg, amend), {
+    run('Committing', () => view.be.commit(msg, amend), {
       after: () => {
         setSummary('')
         setDescription('')
@@ -274,22 +296,28 @@ export function App() {
 
   const mergeInto = (name: string) => {
     const v = view!
-    return run('Merging', () => repo.merge(v.ctx, name, head!), { after: (r) => r === 'up-to-date' && setToast(`Already up to date with ${name}`) })
+    return run('Merging', () => v.be.merge(name, head!), {
+      after: (r) => {
+        if (r === 'up-to-date') setToast(`Already up to date with ${name}`)
+        conflictToast(r)
+      },
+    })
   }
 
   const branchItems = (name: string, oid: string, isHead: boolean): MenuItem[] => {
     const v = view!
     const items: MenuItem[] = []
     if (!isHead) {
-      items.push({ label: `Switch to ${name}`, onClick: () => run('Switching branch', () => repo.checkoutBranch(v.ctx, name)) })
+      items.push({ label: `Switch to ${name}`, onClick: () => run('Switching branch', () => v.be.checkoutBranch(name)) })
       if (head) items.push({ label: `Merge ${name} into ${head}`, onClick: () => mergeInto(name) })
+      if (head && v.be.rebase) items.push({ label: `Rebase ${head} onto ${name}`, onClick: () => run('Rebasing', () => v.be.rebase!(name), { after: conflictToast }) })
     }
     items.push({ label: `Rename ${name}`, onClick: () => setDialog({ kind: 'rename', old: name }) })
     items.push({ label: 'New branch from here', onClick: () => setDialog({ kind: 'branch', at: oid }) })
     items.push({ label: 'Copy name', onClick: () => copy(name) })
     if (!isHead) {
       items.push({ sep: true })
-      items.push({ label: `Delete ${name}`, danger: true, onClick: () => confirm(`Delete "${name}"? This cannot be undone.`, () => run('Deleting branch', () => repo.deleteBranch(v.ctx, name))) })
+      items.push({ label: `Delete ${name}`, danger: true, onClick: () => confirm(`Delete "${name}"? This cannot be undone.`, () => run('Deleting branch', () => v.be.deleteBranch(name))) })
     }
     return items
   }
@@ -297,8 +325,9 @@ export function App() {
   const remoteItems = (name: string): MenuItem[] => {
     const v = view!
     return [
-      { label: `Switch to ${name}`, onClick: () => run('Switching branch', () => repo.checkoutRemote(v.ctx, name)) },
+      { label: `Switch to ${name}`, onClick: () => run('Switching branch', () => v.be.checkoutRemote(name)) },
       ...(head ? [{ label: `Merge ${name} into ${head}`, onClick: () => mergeInto(name) }] : []),
+      ...(head && v.be.rebase ? [{ label: `Rebase ${head} onto ${name}`, onClick: () => run('Rebasing', () => v.be.rebase!(name), { after: conflictToast }) }] : []),
       { label: 'Copy name', onClick: () => copy(name) },
     ]
   }
@@ -306,20 +335,20 @@ export function App() {
   const tagItems = (name: string, oid: string): MenuItem[] => {
     const v = view!
     return [
-      { label: `Check out ${name} (no branch)`, onClick: () => run('Checking out', () => repo.checkoutCommit(v.ctx, oid)) },
+      { label: `Check out ${name} (no branch)`, onClick: () => run('Checking out', () => v.be.checkoutCommit(oid)) },
       { label: 'Copy name', onClick: () => copy(name) },
       { sep: true },
-      { label: `Delete tag ${name}`, danger: true, onClick: () => confirm(`Delete "${name}"? This cannot be undone.`, () => run('Deleting tag', () => repo.deleteTag(v.ctx, name))) },
+      { label: `Delete tag ${name}`, danger: true, onClick: () => confirm(`Delete "${name}"? This cannot be undone.`, () => run('Deleting tag', () => v.be.deleteTag(name))) },
     ]
   }
 
   const stashItems = (index: number, message: string): MenuItem[] => {
     const v = view!
     return [
-      { label: 'Apply (keep stash)', onClick: () => run('Applying stash', () => repo.stashApply(v.ctx, index, false)) },
-      { label: 'Apply and drop', onClick: () => run('Applying stash', () => repo.stashApply(v.ctx, index, true)) },
+      { label: 'Apply (keep stash)', onClick: () => run('Applying stash', () => v.be.stashApply(index, false)) },
+      { label: 'Apply and drop', onClick: () => run('Applying stash', () => v.be.stashApply(index, true)) },
       { sep: true },
-      { label: 'Drop stash', danger: true, onClick: () => confirm(`Drop the stash "${message}"? This cannot be undone.`, () => run('Dropping stash', () => repo.stashDrop(v.ctx, index))) },
+      { label: 'Drop stash', danger: true, onClick: () => confirm(`Drop the stash "${message}"? This cannot be undone.`, () => run('Dropping stash', () => v.be.stashDrop(index))) },
     ]
   }
 
@@ -332,7 +361,7 @@ export function App() {
     if (c.kind === 'wip') {
       items = [
         { label: 'Stash everything', onClick: () => setDialog({ kind: 'stash' }) },
-        { label: 'Stage everything', onClick: () => run('Staging', () => repo.stage(v.ctx, v.data.status.unstaged), { statusOnly: true }) },
+        { label: 'Stage everything', onClick: () => run('Staging', () => v.be.stage(v.data.status.unstaged), { statusOnly: true }) },
         { sep: true },
         {
           label: 'Throw away all changes',
@@ -342,9 +371,9 @@ export function App() {
               run(
                 'Discarding',
                 async () => {
-                  await repo.unstage(v.ctx, v.data.status.staged.map((f) => f.path))
-                  const st = await repo.status(v.ctx)
-                  await repo.discard(v.ctx, st.unstaged)
+                  if (v.data.status.staged.length) await v.be.unstage(v.data.status.staged.map((f) => f.path))
+                  const st = await v.be.status()
+                  if (st.unstaged.length) await v.be.discard(st.unstaged)
                 },
                 { statusOnly: true },
               ),
@@ -363,10 +392,16 @@ export function App() {
         if (l.kind === 'tag') items.push(...tagItems(l.name, c.id))
         items.push({ sep: true })
       }
-      if (!isHead) items.push({ label: 'Check out here (no branch)', onClick: () => run('Checking out', () => repo.checkoutCommit(v.ctx, c.id)) })
+      if (!isHead) items.push({ label: 'Check out here (no branch)', onClick: () => run('Checking out', () => v.be.checkoutCommit(c.id)) })
       items.push({ label: 'New branch from here', onClick: () => setDialog({ kind: 'branch', at: c.id }) })
       items.push({ label: 'New tag here', onClick: () => setDialog({ kind: 'tag', at: c.id }) })
-      if (head && !isHead) items.push({ label: `Reset ${head} to this commit...`, onClick: () => setDialog({ kind: 'reset', at: c.id }) })
+      if (head && !isHead) {
+        items.push({ sep: true })
+        if (v.be.rebase) items.push({ label: `Rebase ${head} here`, onClick: () => run('Rebasing', () => v.be.rebase!(c.id), { after: conflictToast }) })
+        if (v.be.cherryPick) items.push({ label: 'Cherry-pick this commit', onClick: () => run('Cherry-picking', () => v.be.cherryPick!(c.id), { after: conflictToast }) })
+        items.push({ label: `Reset ${head} to this commit...`, onClick: () => setDialog({ kind: 'reset', at: c.id }) })
+      }
+      if (head && v.be.revert) items.push({ label: 'Revert this commit', onClick: () => run('Reverting', () => v.be.revert!(c.id), { after: conflictToast }) })
       items.push({ sep: true })
       items.push({ label: 'Copy full hash', onClick: () => copy(c.id) })
     }
@@ -376,8 +411,8 @@ export function App() {
   const fileMenu = (e: MouseEvent, f: FileChange, area: DiffArea) => {
     const v = view!
     const items: MenuItem[] = []
-    if (area.kind === 'unstaged') items.push({ label: 'Stage', onClick: () => run('Staging', () => repo.stage(v.ctx, [f]), { statusOnly: true }) })
-    if (area.kind === 'staged') items.push({ label: 'Unstage', onClick: () => run('Unstaging', () => repo.unstage(v.ctx, [f.path]), { statusOnly: true }) })
+    if (area.kind === 'unstaged') items.push({ label: 'Stage', onClick: () => run('Staging', () => v.be.stage([f]), { statusOnly: true }) })
+    if (area.kind === 'staged') items.push({ label: 'Unstage', onClick: () => run('Unstaging', () => v.be.unstage([f.path]), { statusOnly: true }) })
     items.push({ label: 'Copy path', onClick: () => copy(f.path) })
     if (area.kind === 'unstaged') {
       items.push({ sep: true })
@@ -389,13 +424,13 @@ export function App() {
   const discardFiles = (files: FileChange[]) => {
     const v = view!
     const what = files.length === 1 ? `Unstaged edits to "${files[0].path}" will be lost. Continue?` : `Unstaged edits to ${files.length} files will be lost. Continue?`
-    confirm(what, () => run('Discarding', () => repo.discard(v.ctx, files), { statusOnly: true }))
+    confirm(what, () => run('Discarding', () => v.be.discard(files), { statusOnly: true }))
   }
 
   const pillDoubleClick = (l: RefLabel) => {
     if (!view) return
-    if (l.kind === 'head' && !l.current) run('Switching branch', () => repo.checkoutBranch(view.ctx, l.name))
-    if (l.kind === 'remote') run('Switching branch', () => repo.checkoutRemote(view.ctx, l.name))
+    if (l.kind === 'head' && !l.current) run('Switching branch', () => view.be.checkoutBranch(l.name))
+    if (l.kind === 'remote') run('Switching branch', () => view.be.checkoutRemote(l.name))
   }
 
   useEffect(() => {
@@ -443,33 +478,41 @@ export function App() {
         </div>
         <div class="welcome">
           <h1>Ramify</h1>
-          <p>Every branch of your repository, in one graph. Runs entirely in this browser tab.</p>
-          <div style={{ display: 'flex', gap: '8px' }}>
-            {canPick && (
-              <button class="primary" onClick={pickFolder}>
-                Open a repository folder
-              </button>
-            )}
-            <button onClick={() => demoRepo().then(openCtx).catch((e) => fail('Could not build the demo', e))}>Try the demo repository</button>
-          </div>
-          {!canPick && <p class="note">Opening folders needs the File System Access API, which Chrome, Edge and other Chromium browsers provide. Safari and Firefox can only run the demo.</p>}
-          {recent.length > 0 && (
-            <div class="recent">
-              <span class="label">Recent</span>
-              {recent.map((h) => (
-                <a key={h.name} onClick={() => openHandle(h).catch((e) => fail('Could not open the folder', e))}>
-                  {h.name}
-                </a>
-              ))}
-            </div>
-          )}
-          <p class="note">Nothing leaves your machine except avatar lookups on gravatar.com and, when you use them, fetch, pull and push through the CORS proxy you set under Settings.</p>
+          <p>Every branch of your repository, in one graph.{helperToken ? '' : ' Runs entirely in this browser tab.'}</p>
           {busy && <p class="busy">{busy}...</p>}
+          {!helperToken && (
+            <>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                {canPick && (
+                  <button class="primary" onClick={pickFolder}>
+                    Open a repository folder
+                  </button>
+                )}
+                <button onClick={() => demoRepo().then(openCtx).catch((e) => fail('Could not build the demo', e))}>Try the demo repository</button>
+              </div>
+              {!canPick && <p class="note">Opening folders needs the File System Access API, which Chrome, Edge and other Chromium browsers provide. Safari and Firefox can only run the demo.</p>}
+              {recent.length > 0 && (
+                <div class="recent">
+                  <span class="label">Recent</span>
+                  {recent.map((h) => (
+                    <a key={h.name} onClick={() => openHandle(h).catch((e) => fail('Could not open the folder', e))}>
+                      {h.name}
+                    </a>
+                  ))}
+                </div>
+              )}
+              <p class="note">Nothing leaves your machine except avatar lookups on gravatar.com and, when you use them, fetch, pull and push through the CORS proxy you set under Settings.</p>
+              <p class="note">
+                For full speed and your SSH keys, run <code>npx ramify</code> inside a repository instead.
+              </p>
+            </>
+          )}
         </div>
         {dialog && (
           <Dialogs
             dialog={dialog}
             settings={settings}
+            native={false}
             onClose={() => setDialog(undefined)}
             onCreateBranch={() => {}}
             onCreateTag={() => {}}
@@ -499,13 +542,20 @@ export function App() {
         <span class="repo">{v.data.name}</span>
         <span style={{ color: 'var(--text-3)' }}>/</span>
         <span class="branch">{v.data.headBranch ?? (v.data.headOid ? `detached at ${v.data.headOid.slice(0, 7)}` : 'no commits')}</span>
-        <button disabled={!!busy || !head} onClick={() => net('Pull', () => repo.pull(v.ctx, settings, head!))} title="Fetch and merge the upstream branch">
+        <button disabled={!!busy || !head} onClick={() => net('Pull', () => v.be.pull(pullMode, head!))} title="Fetch and integrate the upstream branch">
           Pull
         </button>
-        <button disabled={!!busy || !head} onClick={() => net('Push', () => repo.push(v.ctx, settings, head!))} title="Push the checked-out branch">
+        {v.be.native && (
+          <select value={pullMode} onChange={(e) => setPullMode((e.target as HTMLSelectElement).value as PullMode)} title="How pull integrates changes" style={{ width: 'auto', padding: '4px' }}>
+            <option value="merge">merge</option>
+            <option value="ff-only">fast-forward only</option>
+            <option value="rebase">rebase</option>
+          </select>
+        )}
+        <button disabled={!!busy || !head} onClick={() => net('Push', () => v.be.push(head!))} title="Push the checked-out branch">
           Push
         </button>
-        <button disabled={!!busy} onClick={() => net('Fetch', () => repo.fetchAll(v.ctx, settings))} title="Fetch every remote">
+        <button disabled={!!busy} onClick={() => net('Fetch', () => v.be.fetchAll())} title="Fetch every remote">
           Fetch
         </button>
         <button disabled={!!busy || !v.data.headOid} onClick={() => setDialog({ kind: 'branch', at: v.data.headOid! })} title="New branch (⌘B)">
@@ -514,7 +564,7 @@ export function App() {
         <button disabled={!!busy || !dirty} onClick={() => setDialog({ kind: 'stash' })} title="Stash everything">
           Stash
         </button>
-        <button disabled={!!busy || v.data.stashes.length === 0} onClick={() => run('Applying stash', () => repo.stashApply(v.ctx, 0, true))} title="Apply and drop the newest stash">
+        <button disabled={!!busy || v.data.stashes.length === 0} onClick={() => run('Applying stash', () => v.be.stashApply(0, true))} title="Apply and drop the newest stash">
           Pop
         </button>
         {busy && <span class="busy">{busy}...</span>}
@@ -527,13 +577,15 @@ export function App() {
         <button class={showRight ? 'on' : ''} onClick={() => setShowRight(!showRight)} title="Toggle detail panel (⌘K)">
           ▣
         </button>
-        <button onClick={() => setDialog({ kind: 'settings' })} title="Settings: author and remote access">
-          ⚙
-        </button>
+        {!v.be.native && (
+          <button onClick={() => setDialog({ kind: 'settings' })} title="Settings: author and remote access">
+            ⚙
+          </button>
+        )}
         <button onClick={() => reload()} title="Refresh">
           ↻
         </button>
-        {canPick && <button onClick={pickFolder}>Open</button>}
+        {canPick && !helperToken && <button onClick={pickFolder}>Open</button>}
       </div>
       <div class={`body ${showLeft ? '' : 'no-left'} ${showRight ? '' : 'no-right'}`}>
         <LeftPanel
@@ -544,8 +596,8 @@ export function App() {
           }}
           selectedOid={sel?.kind === 'commit' ? sel.oid : undefined}
           onJump={jump}
-          onCheckout={(name) => run('Switching branch', () => repo.checkoutBranch(v.ctx, name))}
-          onCheckoutRemote={(name) => run('Switching branch', () => repo.checkoutRemote(v.ctx, name))}
+          onCheckout={(name) => run('Switching branch', () => v.be.checkoutBranch(name))}
+          onCheckoutRemote={(name) => run('Switching branch', () => v.be.checkoutRemote(name))}
           onBranchMenu={(e, name, oid, isHead) => setMenu({ x: e.clientX, y: e.clientY, items: branchItems(name, oid, isHead) })}
           onRemoteMenu={(e, name) => setMenu({ x: e.clientX, y: e.clientY, items: remoteItems(name) })}
           onTagMenu={(e, name, oid) => setMenu({ x: e.clientX, y: e.clientY, items: tagItems(name, oid) })}
@@ -565,7 +617,7 @@ export function App() {
           onSelect={select}
           onContextMenu={rowMenu}
           onPillDoubleClick={pillDoubleClick}
-          onLoadMore={() => run('Loading more', async () => applyData(v.ctx, await repo.load(v.ctx, v.limit + repo.PAGE), v.limit + repo.PAGE, false))}
+          onLoadMore={() => run('Loading more', async () => applyData(v.be, await v.be.load(v.limit + PAGE), v.limit + PAGE, false))}
           onScrolled={() => setScrollTo(undefined)}
         />
         <DetailPanel
@@ -583,15 +635,17 @@ export function App() {
           onDescription={setDescription}
           onAmend={setAmend}
           onSelectFile={setFileSel}
-          onStage={(files) => run('Staging', () => repo.stage(v.ctx, files), { statusOnly: true })}
-          onUnstage={(paths) => run('Unstaging', () => repo.unstage(v.ctx, paths), { statusOnly: true })}
+          onStage={(files) => run('Staging', () => v.be.stage(files), { statusOnly: true })}
+          onUnstage={(paths) => run('Unstaging', () => v.be.unstage(paths), { statusOnly: true })}
           onDiscard={discardFiles}
-          onStageAll={() => run('Staging', () => repo.stage(v.ctx, v.data.status.unstaged), { statusOnly: true })}
-          onUnstageAll={() => run('Unstaging', () => repo.unstage(v.ctx, v.data.status.staged.map((f) => f.path)), { statusOnly: true })}
+          onStageAll={() => run('Staging', () => v.be.stage(v.data.status.unstaged), { statusOnly: true })}
+          onUnstageAll={() => run('Unstaging', () => v.be.unstage(v.data.status.staged.map((f) => f.path)), { statusOnly: true })}
           onCommit={doCommit}
           onCopy={copy}
           onJump={jump}
           onFileMenu={fileMenu}
+          onAbort={v.be.abort ? () => run('Aborting', () => v.be.abort!()) : undefined}
+          onContinue={v.be.continueOp ? () => run('Continuing', () => v.be.continueOp!()) : undefined}
         />
       </div>
       {menu && <Menu menu={menu} onClose={() => setMenu(undefined)} />}
@@ -599,12 +653,13 @@ export function App() {
         <Dialogs
           dialog={dialog}
           settings={settings}
+          native={v.be.native}
           onClose={() => setDialog(undefined)}
-          onCreateBranch={(name, at, checkout) => run('Creating branch', () => repo.createBranch(v.ctx, name, at, checkout))}
-          onCreateTag={(name, at, message) => run('Creating tag', () => repo.createTag(v.ctx, name, at, message))}
-          onRename={(old, name) => run('Renaming branch', () => repo.renameBranch(v.ctx, old, name))}
-          onStash={(message) => run('Stashing', () => repo.stashSave(v.ctx, message))}
-          onReset={(at, hard) => head && run('Resetting', () => repo.reset(v.ctx, head, at, hard))}
+          onCreateBranch={(name, at, checkout) => run('Creating branch', () => v.be.createBranch(name, at, checkout))}
+          onCreateTag={(name, at, message) => run('Creating tag', () => v.be.createTag(name, at, message))}
+          onRename={(old, name) => run('Renaming branch', () => v.be.renameBranch(old, name))}
+          onStash={(message) => run('Stashing', () => v.be.stashSave(message))}
+          onReset={(at, mode) => head && run('Resetting', () => v.be.reset(head, at, mode))}
           onSettings={(s) => {
             setSettings(s)
             saveSettings(s)
