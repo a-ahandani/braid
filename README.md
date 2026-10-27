@@ -17,7 +17,7 @@ No account, no cloud services, no telemetry. MIT licensed; see THIRD-PARTY-NOTIC
 
 ## Download (macOS, Apple Silicon)
 
-Get `Ramify-<version>-macos-arm64.zip` from the [Releases](https://github.com/a-ahandani/ramify/releases) page, unzip it, and move `Ramify.app` to Applications. The build is signed ad hoc and not notarized yet, so the first launch needs right-click, then Open (or `xattr -d com.apple.quarantine /Applications/Ramify.app`).
+Get `Ramify-<version>-macos-arm64.dmg` from the [Releases](https://github.com/a-ahandani/ramify/releases) page, open it, and drag `Ramify.app` to Applications. The build is signed ad hoc and not notarized yet, so the first launch needs right-click, then Open (or `xattr -d com.apple.quarantine /Applications/Ramify.app`).
 
 ## Build from source on macOS
 
@@ -25,7 +25,7 @@ Requires Rust (`curl https://sh.rustup.rs | sh`) and `git` on your PATH.
 
 ```sh
 git clone https://github.com/a-ahandani/ramify.git && cd ramify
-scripts/bundle-mac.sh --install     # builds Ramify.app and copies it to /Applications
+scripts/bundle-mac.sh --install     # builds Ramify.app and the .dmg, and copies the app to /Applications
 ```
 
 Or install just the binary:

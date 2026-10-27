@@ -23,6 +23,16 @@ cat > "$APP/Contents/Info.plist" <<EOF
 EOF
 codesign --force --deep --sign - "$APP"
 echo "Built $APP"
+VERSION=$(grep '^version' Cargo.toml | head -1 | cut -d'"' -f2)
+DMG="target/Ramify-$VERSION-macos-$(uname -m).dmg"
+STAGE=target/dmg-stage
+rm -rf "$STAGE" "$DMG"
+mkdir -p "$STAGE"
+cp -R "$APP" "$STAGE/"
+ln -s /Applications "$STAGE/Applications"
+hdiutil create -quiet -volname Ramify -srcfolder "$STAGE" -ov -format UDZO "$DMG"
+rm -rf "$STAGE"
+echo "Built $DMG"
 if [ "${1:-}" = "--install" ]; then
   rm -rf /Applications/Ramify.app
   cp -R "$APP" /Applications/Ramify.app
