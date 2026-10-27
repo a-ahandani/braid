@@ -3,7 +3,7 @@ import * as os from 'node:os'
 import * as path from 'node:path'
 import git from 'isomorphic-git'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { commit, commitFiles, diffLines, discard, load, stage, status, unstage, type Ctx } from './repo'
+import { commit, commitFiles, createTag, diffLines, discard, load, stage, status, unstage, type Ctx } from './repo'
 
 let dir: string
 let ctx: Ctx
@@ -40,6 +40,17 @@ describe('repo', () => {
     expect(await commitFiles(ctx, data.commits[0].id)).toEqual([{ path: 'a.txt', kind: 'M' }])
     const lines = await diffLines(ctx, { kind: 'commit', oid: data.commits[0].id }, 'a.txt')
     expect(lines.some((l) => l.type === 'add' && l.text === 'world')).toBe(true)
+  })
+
+  it('puts an annotated tag on its commit without adding a row', async () => {
+    fs.writeFileSync(path.join(dir, 'a.txt'), 'a\n')
+    await stage(ctx, (await status(ctx)).unstaged)
+    const oid = await commit(ctx, 'first', false)
+    await createTag(ctx, 'v1', oid, 'release one')
+    const data = await load(ctx)
+    expect(data.commits.map((c) => c.id)).toEqual([oid])
+    expect(data.tags).toEqual([{ name: 'v1', oid }])
+    expect(data.refsByOid.get(oid)?.some((r) => r.kind === 'tag' && r.name === 'v1')).toBe(true)
   })
 
   it('unstages and discards only the named file', async () => {

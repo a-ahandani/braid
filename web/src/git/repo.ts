@@ -84,19 +84,11 @@ async function resolve(ctx: Ctx, ref: string): Promise<string | undefined> {
 }
 
 async function peelToCommit(ctx: Ctx, oid: string): Promise<string | undefined> {
-  for (let i = 0; i < 5; i++) {
-    try {
-      await git.readCommit({ fs: ctx.fs, dir: ctx.dir, oid, cache: ctx.cache })
-      return oid
-    } catch {
-      try {
-        oid = (await git.readTag({ fs: ctx.fs, dir: ctx.dir, oid, cache: ctx.cache })).tag.object
-      } catch {
-        return undefined
-      }
-    }
+  try {
+    return (await git.readCommit({ fs: ctx.fs, dir: ctx.dir, oid, cache: ctx.cache })).oid
+  } catch {
+    return undefined
   }
-  return undefined
 }
 
 async function readStashes(ctx: Ctx): Promise<StashInfo[]> {
@@ -235,7 +227,7 @@ export async function load(ctx: Ctx, limit = PAGE): Promise<RepoData> {
       parents: stash !== undefined ? c.parent.slice(0, 1) : c.parent,
       author: c.author.name,
       email: c.author.email,
-      time: c.author.timestamp,
+      time: c.committer.timestamp,
       summary: stash ?? summary,
       body,
       kind: stash !== undefined ? 'stash' : c.parent.length > 1 ? 'merge' : 'commit',
