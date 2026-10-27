@@ -21,7 +21,11 @@ cat > "$APP/Contents/Info.plist" <<EOF
   <key>NSHighResolutionCapable</key><true/>
 </dict></plist>
 EOF
-codesign --force --deep --sign - "$APP"
+if [ -n "${RAMIFY_SIGN_IDENTITY:-}" ]; then
+  codesign --force --deep --options runtime --timestamp --sign "$RAMIFY_SIGN_IDENTITY" "$APP"
+else
+  codesign --force --deep --sign - "$APP"
+fi
 echo "Built $APP"
 VERSION=$(grep '^version' Cargo.toml | head -1 | cut -d'"' -f2)
 DMG="target/Ramify-$VERSION-macos-$(uname -m).dmg"
@@ -32,6 +36,12 @@ cp -R "$APP" "$STAGE/"
 ln -s /Applications "$STAGE/Applications"
 hdiutil create -quiet -volname Ramify -srcfolder "$STAGE" -ov -format UDZO "$DMG"
 rm -rf "$STAGE"
+if [ -n "${RAMIFY_SIGN_IDENTITY:-}" ] && [ -n "${RAMIFY_NOTARY_PROFILE:-}" ]; then
+  codesign --force --timestamp --sign "$RAMIFY_SIGN_IDENTITY" "$DMG"
+  xcrun notarytool submit "$DMG" --keychain-profile "$RAMIFY_NOTARY_PROFILE" --wait
+  xcrun stapler staple "$DMG"
+  xcrun stapler staple "$APP"
+fi
 echo "Built $DMG"
 if [ "${1:-}" = "--install" ]; then
   rm -rf /Applications/Ramify.app

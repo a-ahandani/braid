@@ -17,7 +17,13 @@ No account, no cloud services, no telemetry. MIT licensed; see THIRD-PARTY-NOTIC
 
 ## Download (macOS, Apple Silicon)
 
-Get `Ramify-<version>-macos-arm64.dmg` from the [Releases](https://github.com/a-ahandani/ramify/releases) page, open it, and drag `Ramify.app` to Applications. The build is signed ad hoc and not notarized yet, so the first launch needs right-click, then Open (or `xattr -d com.apple.quarantine /Applications/Ramify.app`).
+Get `Ramify-<version>-macos-arm64.dmg` from the [Releases](https://github.com/a-ahandani/ramify/releases) page, open it, and drag `Ramify.app` to Applications. Until the build is notarized, macOS reports a downloaded copy as damaged. After copying it to Applications, clear the download flag once:
+
+```sh
+xattr -d com.apple.quarantine /Applications/Ramify.app
+```
+
+To produce a signed and notarized build yourself, run the bundle script with `RAMIFY_SIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)"` and `RAMIFY_NOTARY_PROFILE=<notarytool keychain profile>` set.
 
 ## Build from source on macOS
 
