@@ -8,9 +8,9 @@ npx ramulus
 
 Run it inside any git repository, or pass a path: `npx ramulus ~/code/app`. Run it in a folder that holds several repositories, such as `~/code`, and it offers to open each one in the sidebar. Ramulus starts a small server on 127.0.0.1 on top of the `git` you already have and opens the UI in your browser. It needs Node 20 or newer and `git`, and works on macOS, Windows and Linux.
 
-[![Ramulus in use: opening three repositories, staging one change block, an AI agent drafting the commit message, dragging a branch onto main to merge it, switching to a color scheme from a link, and jumping to another repository](docs/demo.gif)](docs/demo.mp4)
+![Ramulus in use: opening three repositories, staging one change block, an AI agent drafting the commit message, dragging a branch onto main to merge it, switching to a color scheme from a link, and jumping to another repository](docs/demo.gif)
 
-[Watch the demo in full quality](docs/demo.mp4)
+[Download the demo in full quality (MP4, 1.4 MB)](https://github.com/a-ahandani/ramulus/raw/main/docs/demo.mp4)
 
 ## Why Ramulus
 
