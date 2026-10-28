@@ -34,6 +34,7 @@ export interface DetailProps {
   onJump: (oid: string) => void
   onFileMenu: (e: MouseEvent, f: FileChange, area: DiffArea) => void
   onAbort?: () => void
+  onDropAutostash?: () => void
   onContinue?: () => void
 }
 
@@ -210,8 +211,17 @@ export function DetailPanel(p: DetailProps) {
   const isSel = (area: DiffArea['kind'], path: string) => p.selectedFile?.area.kind === area && p.selectedFile.path === path
   const state = s.state
   const conflicts = s.unstaged.filter((f) => f.conflict).length
+  const autostash = !state && p.onDropAutostash && p.data.stashes.some((x) => /autostash$/.test(x.message))
   return (
     <div class="right">
+      {autostash && (
+        <div class="banner">
+          <span>{conflicts > 0 ? `Your uncommitted changes conflicted when they were put back. Resolve and stage ${conflicts === 1 ? 'the file' : `the ${conflicts} files`} marked !, then press Done.` : 'A saved copy of your uncommitted changes is still in the stash. Press Done once your files look right.'}</span>
+          <button disabled={conflicts > 0} onClick={p.onDropAutostash} title="Drop the saved copy from the stash">
+            Done
+          </button>
+        </div>
+      )}
       {state && (
         <div class="banner">
           <span>

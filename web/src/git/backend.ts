@@ -5,6 +5,13 @@ export type PullMode = 'merge' | 'ff-only' | 'rebase'
 export type ResetMode = 'soft' | 'mixed' | 'hard'
 export type MergeResult = 'up-to-date' | 'fast-forward' | 'merged' | 'conflicts' | 'done'
 
+export type PushResult = { result: 'pushed' } | { result: 'rejected'; ahead: number; behind: number; theirs: string }
+
+export interface RebaseResult {
+  result: 'done' | 'conflicts' | 'stash-conflicts'
+  before: string
+}
+
 export interface FileVersions {
   old: string
   new: string
@@ -38,8 +45,10 @@ export interface Backend {
   reset(head: string, oid: string, mode: ResetMode): Promise<void>
   fetchAll(): Promise<void>
   pull(mode: PullMode, head: string): Promise<void>
-  push(head: string): Promise<void>
-  rebase?(onto: string): Promise<MergeResult>
+  push(head: string, lease?: string): Promise<PushResult | void>
+  rebase?(onto: string): Promise<RebaseResult>
+  undoRebase?(before: string): Promise<'done' | 'stash-conflicts'>
+  dropAutostash?(): Promise<void>
   cherryPick?(oid: string): Promise<MergeResult>
   revert?(oid: string): Promise<MergeResult>
   abort?(): Promise<void>

@@ -2,7 +2,7 @@ import type { JSX } from 'preact'
 import { useEffect, useRef, useState } from 'preact/hooks'
 import type { RowLayout } from '../git/graph'
 import type { BranchInfo, Commit, RefLabel } from '../git/repo'
-import { ago, Avatar, fmtDate, Icon, laneColor, short } from './bits'
+import { ago, Avatar, fmtDate, Icon, laneColor, Laptop, short } from './bits'
 
 export const ROW_H = 30
 const COL_W = 24
@@ -169,8 +169,7 @@ export function Pill({ pill, color, onDoubleClick, onPointerDown }: { pill: Pill
       data-draggable={draggable ? '1' : undefined}
       onPointerDown={(e) => draggable && e.button === 0 && onPointerDown?.(e)}
     >
-      {pill.current && <Icon name="target" />}
-      {pill.local && !pill.current && <Icon name="git-branch" />}
+      {pill.local && <Laptop />}
       {pill.remote && <Icon name="cloud" />}
       {pill.tag && <Icon name="tag" />}
       {pill.name}
@@ -188,6 +187,7 @@ export function GraphView(p: GraphProps) {
   const box = useRef<HTMLDivElement>(null)
   const [scrollTop, setScrollTop] = useState(0)
   const [height, setHeight] = useState(600)
+  const [width, setWidth] = useState(1000)
   const [dropRow, setDropRow] = useState<number>()
   const dragging = useRef<PillData | undefined>(undefined)
   const startDrag = (pill: PillData, e: PointerEvent) => {
@@ -222,9 +222,13 @@ export function GraphView(p: GraphProps) {
   useEffect(() => {
     const el = box.current
     if (!el) return
-    const ro = new ResizeObserver(() => setHeight(el.clientHeight))
+    const measure = () => {
+      setHeight(el.clientHeight)
+      setWidth(el.clientWidth)
+    }
+    const ro = new ResizeObserver(measure)
     ro.observe(el)
-    setHeight(el.clientHeight)
+    measure()
     return () => ro.disconnect()
   }, [])
   useEffect(() => {
@@ -237,7 +241,10 @@ export function GraphView(p: GraphProps) {
   const start = Math.max(0, Math.floor(scrollTop / ROW_H) - 5)
   const end = Math.min(count, Math.ceil((scrollTop + height) / ROW_H) + 5)
   const graphW = Math.min(420, Math.max(56, 3 + GUTTER + (p.maxCol + 1) * COL_W + 6))
-  const cols = `minmax(150px, 22%) ${graphW}px 1fr 40px 120px 72px`
+  const showWhen = width >= 660
+  const showSha = width >= 820
+  const refsW = Math.round(Math.min(240, Math.max(110, width * 0.18)))
+  const cols = [`${refsW}px`, `${graphW}px`, 'minmax(0, 1fr)', '36px', ...(showWhen ? ['110px'] : []), ...(showSha ? ['72px'] : [])].join(' ')
   const items: JSX.Element[] = []
   for (let i = start; i < end; i++) {
     const top = i * ROW_H
@@ -279,12 +286,16 @@ export function GraphView(p: GraphProps) {
           ))}
         </div>
         <Lanes lay={lay} kind={c.kind} author={c.author} email={c.email} drawEdges={p.showEdges} />
-        <div class={`msg ${c.kind}`}>{c.kind === 'wip' ? `Uncommitted changes · ${p.wipCount} file${p.wipCount === 1 ? '' : 's'}` : c.summary}</div>
-        <div class="author">{c.kind !== 'wip' && <Avatar name={c.author} email={c.email} color={color} size={24} />}</div>
-        <div class="date" title={c.kind !== 'wip' ? fmtDate(c.time) : undefined}>
-          {c.kind !== 'wip' && ago(c.time)}
+        <div class={`msg ${c.kind}`} title={c.kind === 'wip' ? undefined : `${c.summary}\n${c.author} · ${fmtDate(c.time)} · ${short(c.id)}`}>
+          {c.kind === 'wip' ? `Uncommitted changes · ${p.wipCount} file${p.wipCount === 1 ? '' : 's'}` : c.summary}
         </div>
-        <div class="sha">{c.kind !== 'wip' && short(c.id)}</div>
+        <div class="author">{c.kind !== 'wip' && <Avatar name={c.author} email={c.email} color={color} size={24} />}</div>
+        {showWhen && (
+          <div class="date" title={c.kind !== 'wip' ? fmtDate(c.time) : undefined}>
+            {c.kind !== 'wip' && ago(c.time)}
+          </div>
+        )}
+        {showSha && <div class="sha">{c.kind !== 'wip' && short(c.id)}</div>}
       </div>,
     )
   }
@@ -302,8 +313,8 @@ export function GraphView(p: GraphProps) {
           )}
         </div>
         <div></div>
-        <div>WHEN</div>
-        <div>SHA</div>
+        {showWhen && <div>WHEN</div>}
+        {showSha && <div>SHA</div>}
       </div>
       <div class="rows" ref={box} onScroll={(e) => setScrollTop((e.currentTarget as HTMLDivElement).scrollTop)}>
         <div style={{ height: `${count * ROW_H}px`, position: 'relative' }}>{items}</div>

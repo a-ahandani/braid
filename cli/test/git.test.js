@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { after, before, describe, it } from 'node:test'
@@ -101,5 +101,135 @@ describe('git helper', () => {
         { path: 'd.txt', kind: 'M', conflict: true },
       ],
     })
+  })
+})
+
+describe('rebase with local changes', () => {
+  let repo
+  const g = (...args) => execFileSync('git', args, { cwd: repo, encoding: 'utf8' })
+  const write = (name, text) => writeFileSync(join(repo, name), text)
+  const read = (name) => readFileSync(join(repo, name), 'utf8')
+
+  before(() => {
+    repo = mkdtempSync(join(tmpdir(), 'ramulus-rebase-'))
+    g('init', '-q', '-b', 'main')
+    g('config', 'user.name', 'Test')
+    g('config', 'user.email', 't@example.com')
+    write('a.txt', 'one\ntwo\n')
+    write('b.txt', 'base\n')
+    g('add', '.')
+    g('commit', '-qm', 'base')
+    g('checkout', '-qb', 'feature')
+    write('f.txt', 'feature\n')
+    g('add', '.')
+    g('commit', '-qm', 'feature work')
+    g('checkout', '-q', 'main')
+    write('a.txt', 'ONE\ntwo\n')
+    g('commit', '-qam', 'main work')
+    g('checkout', '-q', 'feature')
+  })
+
+  after(() => rmSync(repo, { recursive: true, force: true }))
+
+  it('stashes, rebases, reapplies, and undoes back to the original commit', async () => {
+    write('b.txt', 'local edit\n')
+    const tip = g('rev-parse', 'HEAD').trim()
+    const r = await git.rebase(repo, 'main')
+    assert.equal(r.result, 'done')
+    assert.equal(r.before, tip)
+    assert.equal(read('b.txt'), 'local edit\n')
+    assert.equal(read('a.txt'), 'ONE\ntwo\n')
+    assert.equal(await git.undoRebase(repo, r.before), 'done')
+    assert.equal(g('rev-parse', 'HEAD').trim(), tip)
+    assert.equal(read('b.txt'), 'local edit\n')
+    assert.equal(g('stash', 'list'), '')
+  })
+
+  it('keeps the changes when putting them back conflicts, and undo restores them', async () => {
+    write('a.txt', 'mine\ntwo\n')
+    const tip = g('rev-parse', 'HEAD').trim()
+    const r = await git.rebase(repo, 'main')
+    assert.equal(r.result, 'stash-conflicts')
+    assert.match(g('stash', 'list'), /autostash/)
+    assert.match(read('a.txt'), /<<<<<<<|mine/)
+    write('b.txt', 'after rebase\n')
+    assert.equal(await git.undoRebase(repo, r.before), 'done')
+    assert.equal(g('rev-parse', 'HEAD').trim(), tip)
+    assert.equal(read('a.txt'), 'mine\ntwo\n')
+    assert.equal(g('stash', 'list', '--format=%gs').trim(), 'On feature: Backup before undoing the rebase')
+    assert.equal(g('show', 'stash@{0}:b.txt'), 'after rebase\n')
+    g('stash', 'drop', '-q')
+  })
+
+  it('refuses to undo once the branch moved after the rebase', async () => {
+    g('checkout', '-q', '--', '.')
+    const r = await git.rebase(repo, 'main')
+    g('rebase', '-q', '--force-rebase', 'main')
+    await assert.rejects(git.undoRebase(repo, r.before), /changed after the rebase/)
+    write('c.txt', 'later\n')
+    g('add', '.')
+    g('commit', '-qm', 'later work')
+    await assert.rejects(git.undoRebase(repo, r.before), /changed after the rebase/)
+  })
+
+  it('stops instead of overwriting an untracked file', async () => {
+    g('checkout', '-q', 'main')
+    g('rm', '-q', 'b.txt')
+    g('commit', '-qm', 'drop b')
+    g('checkout', '-q', 'feature')
+    const r = await git.rebase(repo, 'main')
+    assert.equal(r.result, 'done')
+    write('b.txt', 'new work\n')
+    write('f.txt', 'tracked edit\n')
+    const tip = g('rev-parse', 'HEAD').trim()
+    await assert.rejects(git.undoRebase(repo, r.before), /b\.txt/)
+    assert.equal(g('rev-parse', 'HEAD').trim(), tip)
+    assert.equal(read('b.txt'), 'new work\n')
+    assert.equal(read('f.txt'), 'tracked edit\n')
+    assert.equal(g('stash', 'list'), '')
+  })
+})
+
+describe('push when the remote moved on', () => {
+  let root
+  const g = (cwd, ...args) => execFileSync('git', ['-c', 'user.name=Test', '-c', 'user.email=t@example.com', ...args], { cwd, encoding: 'utf8' })
+
+  before(() => {
+    root = mkdtempSync(join(tmpdir(), 'ramulus-push-'))
+    g(root, 'init', '-q', '--bare', '-b', 'main', 'remote.git')
+    g(root, 'clone', '-q', 'remote.git', 'mine')
+    writeFileSync(join(root, 'mine', 'a.txt'), 'a\n')
+    g(join(root, 'mine'), 'add', '.')
+    g(join(root, 'mine'), 'commit', '-qm', 'base')
+    g(join(root, 'mine'), 'push', '-q', 'origin', 'main')
+    g(root, 'clone', '-q', 'remote.git', 'theirs')
+    writeFileSync(join(root, 'theirs', 'b.txt'), 'theirs\n')
+    g(join(root, 'theirs'), 'add', '.')
+    g(join(root, 'theirs'), 'commit', '-qm', 'their work')
+    g(join(root, 'theirs'), 'push', '-q')
+    writeFileSync(join(root, 'mine', 'c.txt'), 'mine\n')
+    g(join(root, 'mine'), 'add', '.')
+    g(join(root, 'mine'), 'commit', '-qm', 'my work')
+  })
+
+  after(() => rmSync(root, { recursive: true, force: true }))
+
+  it('reports a rejected push with counts, then force pushes only over the commit it counted', async () => {
+    const mine = join(root, 'mine')
+    const theirs = join(root, 'theirs')
+    const remoteTip = () => g(root, '--git-dir', 'remote.git', 'rev-parse', 'main').trim()
+    const r = await git.push(mine)
+    assert.deepEqual(r, { result: 'rejected', ahead: 1, behind: 1, theirs: remoteTip() })
+    writeFileSync(join(theirs, 'd.txt'), 'more\n')
+    g(theirs, 'add', '.')
+    g(theirs, 'commit', '-qm', 'their second')
+    g(theirs, 'push', '-q')
+    g(mine, 'fetch', '-q')
+    await assert.rejects(git.push(mine, r.theirs), /stale info|rejected/)
+    const again = await git.push(mine)
+    assert.equal(again.theirs, remoteTip())
+    assert.equal(again.behind, 2)
+    assert.deepEqual(await git.push(mine, again.theirs), { result: 'pushed' })
+    assert.equal(remoteTip(), g(mine, 'rev-parse', 'HEAD').trim())
   })
 })

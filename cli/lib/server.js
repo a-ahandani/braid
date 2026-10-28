@@ -32,6 +32,8 @@ const OPS = {
   stashDrop: (dir, b) => git.stashDrop(dir, b.index),
   merge: (dir, b) => git.merge(dir, b.branch),
   rebase: (dir, b) => git.rebase(dir, b.onto),
+  undoRebase: (dir, b) => git.undoRebase(dir, b.before),
+  dropAutostash: (dir) => git.dropAutostash(dir),
   cherryPick: (dir, b) => git.cherryPick(dir, b.oid),
   revert: (dir, b) => git.revert(dir, b.oid),
   reset: (dir, b) => git.reset(dir, b.oid, b.mode),
@@ -39,7 +41,7 @@ const OPS = {
   continue: (dir) => git.continueOp(dir),
   fetchAll: (dir) => git.fetchAll(dir),
   pull: (dir, b) => git.pull(dir, b.mode),
-  push: (dir) => git.push(dir),
+  push: (dir, b) => git.push(dir, b.lease),
 }
 
 function readBody(req) {
@@ -86,7 +88,9 @@ function watchRepo(dir) {
 export function createServer({ dir, root = dir, uiDir, token, stateFile = STATE }) {
   const known = new Set(dir ? [dir] : [])
   const watchers = new Map()
-  const readRecent = () => readFile(stateFile, 'utf8').then(JSON.parse, () => [])
+  const pinFile = join(dirname(stateFile), 'pinned.json')
+  const readList = (file) => readFile(file, 'utf8').then((t) => [JSON.parse(t)].flat().filter((d) => typeof d === 'string'), () => [])
+  const readRecent = () => readList(stateFile)
   const remember = async (repo) => {
     const list = [repo, ...(await readRecent()).filter((d) => d !== repo)].slice(0, 12)
     await mkdir(dirname(stateFile), { recursive: true })
@@ -96,6 +100,12 @@ export function createServer({ dir, root = dir, uiDir, token, stateFile = STATE 
   const info = (repo) => ({ dir: repo, name: basename(repo) })
   const SHELL = {
     repos: async () => ({ current: dir ? info(dir) : null, recent: (await readRecent()).filter((d) => existsSync(d)).map(info) }),
+    pins: async () => (await readList(pinFile)).filter((d) => existsSync(d)).map(info),
+    setPins: async (b) => {
+      const dirs = [b.dirs].flat().filter((d) => typeof d === 'string').slice(0, 50)
+      await mkdir(dirname(pinFile), { recursive: true })
+      await writeFile(pinFile, JSON.stringify(dirs))
+    },
     findRepos: async () => ({ root, repos: dir || root === homedir() ? [] : (await git.findRepos(root)).map(info) }),
     pickFolder: () => git.pickFolder(),
     openRepo: async (b) => {

@@ -416,13 +416,47 @@ export async function merge(dir, branch) {
   return /Already up to date/i.test(r.stdout) ? 'up-to-date' : /Fast-forward/.test(r.stdout) ? 'fast-forward' : 'merged'
 }
 
+const AUTOSTASH = /autostash$/
+
+async function autostashIndex(dir) {
+  const list = (await run(dir, ['stash', 'list', '--format=%gs'], { allowFail: true })).stdout.split('\n')
+  const i = list.findIndex((s) => AUTOSTASH.test(s.trim()))
+  return i < 0 ? undefined : i
+}
+
 export async function rebase(dir, onto) {
-  const r = await run(dir, ['-c', 'core.editor=true', 'rebase', '--', safeName(onto)], { allowFail: true })
+  const before = (await run(dir, ['rev-parse', 'HEAD'])).stdout.trim()
+  const r = await run(dir, ['-c', 'core.editor=true', 'rebase', '--autostash', '--', safeName(onto)], { allowFail: true })
   if (!r.ok) {
-    if ((await stateOf(dir)) === 'rebase') return 'conflicts'
+    if ((await stateOf(dir)) === 'rebase') return { result: 'conflicts', before }
     throw new Error((r.stderr || r.stdout).trim())
   }
-  return 'done'
+  return { result: /autostash resulted in conflicts/i.test(`${r.stdout}\n${r.stderr}`) ? 'stash-conflicts' : 'done', before }
+}
+
+export async function undoRebase(dir, before) {
+  const last = (await run(dir, ['reflog', '-1', '--format=%gs', 'HEAD'])).stdout.trim()
+  const orig = (await run(dir, ['rev-parse', '-q', '--verify', 'ORIG_HEAD'], { allowFail: true })).stdout.trim()
+  const want = (await run(dir, ['rev-parse', '-q', '--verify', `${safeName(before)}^{commit}`])).stdout.trim()
+  if (!/^rebase/.test(last) || orig !== want) throw new Error('The branch changed after the rebase, so it cannot be undone safely here.')
+  const unmerged = /^(UU|AA|DD|AU|UA|DU|UD) /m.test((await run(dir, ['status', '--porcelain', '-uno'])).stdout)
+  if (unmerged) await run(dir, ['reset', '-q'])
+  const dirty = (await run(dir, ['status', '--porcelain', '-uno'])).stdout.trim()
+  if (dirty) await run(dir, ['stash', 'push', '-q', '-m', unmerged ? 'Backup before undoing the rebase' : 'autostash'])
+  const reset = await run(dir, ['reset', '-q', '--keep', want], { allowFail: true })
+  if (!reset.ok) {
+    if (dirty) await run(dir, ['stash', 'pop', '-q'], { allowFail: true })
+    throw new Error((reset.stderr || reset.stdout).trim())
+  }
+  const i = await autostashIndex(dir)
+  if (i === undefined) return 'done'
+  const pop = await run(dir, ['stash', 'pop', '-q', `stash@{${i}}`], { allowFail: true })
+  return pop.ok ? 'done' : 'stash-conflicts'
+}
+
+export async function dropAutostash(dir) {
+  const i = await autostashIndex(dir)
+  if (i !== undefined) await run(dir, ['stash', 'drop', '-q', `stash@{${i}}`])
 }
 
 export async function cherryPick(dir, oid) {
@@ -466,21 +500,34 @@ export async function fetchAll(dir) {
 }
 
 export async function pull(dir, mode) {
-  const flag = mode === 'rebase' ? '--rebase' : mode === 'ff-only' ? '--ff-only' : '--no-rebase'
-  await run(dir, ['pull', flag])
+  const flags = mode === 'rebase' ? ['--rebase', '--autostash'] : mode === 'ff-only' ? ['--ff-only'] : ['--no-rebase']
+  await run(dir, ['pull', ...flags])
 }
 
-export async function push(dir) {
-  const upstream = (await run(dir, ['rev-parse', '-q', '--abbrev-ref', '@{u}'], { allowFail: true })).ok
-  if (upstream) {
-    await run(dir, ['push'])
-    return
-  }
+export async function push(dir, lease) {
+  if (lease && !/^[0-9a-f]{40,64}$/.test(lease)) throw new Error('Bad lease')
   const branch = (await run(dir, ['symbolic-ref', '-q', '--short', 'HEAD'])).stdout.trim()
-  const remotes = (await run(dir, ['remote'])).stdout.trim().split('\n').filter(Boolean)
-  const remote = remotes.includes('origin') ? 'origin' : remotes[0]
-  if (!remote) throw new Error('This repository has no remote to push to')
-  await run(dir, ['push', '-u', '--', remote, branch])
+  const upstream = (await run(dir, ['rev-parse', '-q', '--abbrev-ref', '@{u}'], { allowFail: true })).stdout.trim()
+  const ref = upstream ? (await run(dir, ['config', '--get', `branch.${branch}.merge`])).stdout.trim() : `refs/heads/${branch}`
+  const force = lease ? [`--force-with-lease=${ref}:${lease}`] : []
+  let args = ['push', ...force]
+  let remote = upstream.split('/')[0]
+  let target = '@{u}'
+  if (!upstream) {
+    const remotes = (await run(dir, ['remote'])).stdout.trim().split('\n').filter(Boolean)
+    remote = remotes.includes('origin') ? 'origin' : remotes[0]
+    if (!remote) throw new Error('This repository has no remote to push to')
+    args = ['push', ...force, '-u', '--', remote, branch]
+    target = `${remote}/${branch}`
+  }
+  const r = await run(dir, args, { allowFail: true })
+  if (r.ok) return { result: 'pushed' }
+  const text = (r.stderr || r.stdout).trim()
+  if (force.length || !/\[rejected\]|non-fast-forward|fetch first/.test(text)) throw new Error(text)
+  await run(dir, ['fetch', '-q', '--', remote], { allowFail: true })
+  const [ahead = 0, behind = 0] = (await run(dir, ['rev-list', '--left-right', '--count', `HEAD...${target}`], { allowFail: true })).stdout.trim().split(/\s+/).map(Number)
+  const theirs = (await run(dir, ['rev-parse', '-q', '--verify', `${target}^{commit}`], { allowFail: true })).stdout.trim()
+  return { result: 'rejected', ahead, behind, theirs }
 }
 
 export function isRepo(dir) {

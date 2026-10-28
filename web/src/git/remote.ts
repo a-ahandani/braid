@@ -21,6 +21,8 @@ export function helperShell(base: string, token: string) {
   return {
     repos: () => post<{ current: RepoInfo | null; recent: RepoInfo[] }>(base, token, 'repos', {}),
     findRepos: () => post<{ root: string; repos: RepoInfo[] }>(base, token, 'findRepos', {}),
+    pins: () => post<RepoInfo[]>(base, token, 'pins', {}),
+    setPins: (dirs: string[]) => post<void>(base, token, 'setPins', { dirs }),
     openRepo: (path: string) => post<RepoInfo>(base, token, 'openRepo', { path }),
     pickFolder: () => post<string | null>(base, token, 'pickFolder', {}),
   }
@@ -59,8 +61,10 @@ export function httpBackend(base: string, token: string, repo?: string): Backend
     reset: (_head, oid, mode) => call('reset', { oid, mode }),
     fetchAll: () => call('fetchAll'),
     pull: (mode) => call('pull', { mode }),
-    push: () => call('push'),
+    push: (_head, lease) => call('push', { lease }),
     rebase: (onto) => call('rebase', { onto }),
+    undoRebase: (before) => call('undoRebase', { before }),
+    dropAutostash: () => call('dropAutostash'),
     cherryPick: (oid) => call('cherryPick', { oid }),
     revert: (oid) => call('revert', { oid }),
     abort: () => call('abort'),

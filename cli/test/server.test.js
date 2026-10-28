@@ -64,6 +64,8 @@ describe('helper server', () => {
     assert.equal(repos.current.dir, first)
     assert.deepEqual(repos.recent.map((r) => r.name), ['second', 'first'])
     assert.equal((await call('constructor')).error, 'unknown operation')
+    await call('setPins', { dirs: [second, join(root, 'gone'), 42] })
+    assert.deepEqual((await call('pins')).result.map((r) => r.name), ['second'])
     const events = (repo) => fetch(`${base}/api/events?token=${token}&repo=${encodeURIComponent(repo)}`, { signal: AbortSignal.timeout(2000) })
     assert.equal((await events(join(root, 'other'))).status, 401)
     const open = await events(second)

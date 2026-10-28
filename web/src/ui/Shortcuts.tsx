@@ -3,6 +3,7 @@ const MOD = typeof navigator !== 'undefined' && /Mac/.test(navigator.platform) ?
 export const SHORTCUTS: [string, string][] = [
   [`${MOD} ⇧ P`, 'Command palette'],
   [`${MOD} F`, 'Search commits'],
+  [`${MOD} ⇧ A`, 'Search open repositories'],
   [`${MOD} B`, 'New branch from HEAD'],
   [`${MOD} L`, 'Fetch every remote'],
   [`${MOD} ⏎`, 'Commit'],

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'preact/hooks'
-import type { Backend, PullMode } from '../git/backend'
+import type { Backend, PullMode, PushResult, RebaseResult } from '../git/backend'
 import { layout, type RowLayout } from '../git/graph'
 import { PAGE, type Commit, type DiffArea, type FileChange, type NetSettings, type RepoData } from '../git/repo'
 import { Icon, laneColor, short } from './bits'
@@ -71,7 +71,12 @@ const clamp = (n: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, n
 
 const PULL_MODES: Record<PullMode, string> = { merge: 'Merge', 'ff-only': 'Fast-forward only', rebase: 'Rebase' }
 
-export function App(p: { be: Backend; active: boolean; theme: Theme; onTheme: (t: Theme) => void; onOpenRepo: () => void; onDirty: (dirty: boolean) => void }) {
+export interface TabApi {
+  pull: () => Promise<void>
+  fetch: () => Promise<void>
+}
+
+export function App(p: { be: Backend; active: boolean; theme: Theme; onTheme: (t: Theme) => void; onOpenRepo: () => void; onDirty: (dirty: boolean) => void; onApi: (api: TabApi) => void; onSearchRepos: () => void; onAll: (kind: 'pull' | 'fetch') => void }) {
   const theme = p.theme
   const setTheme = p.onTheme
   const [view, setView] = useState<View>()
@@ -98,6 +103,7 @@ export function App(p: { be: Backend; active: boolean; theme: Theme; onTheme: (t
   const [shortcuts, setShortcuts] = useState(false)
   const [busy, setBusy] = useState<string>()
   const [toast, setToast] = useState<string>()
+  const [undo, setUndo] = useState<{ before: string; onto: string }>()
   const [showLeft, setShowLeft] = useState(true)
   const [showRight, setShowRight] = useState(true)
   const [widths, setWidths] = useState(() => ({ left: Number(stored('ramulus.left')) || 240, right: Number(stored('ramulus.right')) || 440 }))
@@ -113,6 +119,8 @@ export function App(p: { be: Backend; active: boolean; theme: Theme; onTheme: (t
   }
   const viewRef = useRef(view)
   viewRef.current = view
+  const busyRef = useRef(busy)
+  busyRef.current = busy
 
   useEffect(() => {
     localStorage.setItem('ramulus.left', String(widths.left))
@@ -174,6 +182,31 @@ export function App(p: { be: Backend; active: boolean; theme: Theme; onTheme: (t
       fail('Could not read the repository', e)
     }
   }, [applyData])
+
+  useEffect(() => {
+    const remote = async (label: string, fn: (v: View) => Promise<unknown>) => {
+      const v = viewRef.current
+      if (!v) throw new Error('still loading')
+      if (busyRef.current) throw new Error(`busy: ${busyRef.current.toLowerCase()}`)
+      busyRef.current = label
+      setBusy(label)
+      try {
+        await fn(v)
+      } finally {
+        busyRef.current = undefined
+        setBusy(undefined)
+      }
+      await reload()
+    }
+    p.onApi({
+      pull: () =>
+        remote('Pulling', (v) => {
+          if (!v.data.headBranch) throw new Error('no branch is checked out')
+          return v.be.pull('ff-only', v.data.headBranch)
+        }),
+      fetch: () => remote('Fetching', (v) => v.be.fetchAll()),
+    })
+  }, [])
 
   useEffect(() => {
     if (!view?.be.subscribe || !p.active) return
@@ -326,7 +359,53 @@ export function App(p: { be: Backend; active: boolean; theme: Theme; onTheme: (t
 
   const rebaseOnto = (target: string) => {
     const v = view!
-    return run('Rebasing', () => v.be.rebase!(target), { after: conflictToast })
+    const label = /^[0-9a-f]{40}$/.test(target) ? (v.data.refsByOid.get(target)?.find((r) => r.kind !== 'tag')?.name ?? short(target)) : target
+    return run('Rebasing', () => v.be.rebase!(target), {
+      after: (r) => {
+        const res = r as RebaseResult
+        setUndo({ before: res.before, onto: label })
+        if (res.result === 'conflicts') setToast('The rebase stopped on conflicts. Resolve them and Continue, or Abort to go back.')
+        else if (res.result === 'stash-conflicts') setToast('Rebased. Your uncommitted changes conflicted when they were put back.')
+      },
+    })
+  }
+
+  const pushHead = (lease?: string) => {
+    const v = view
+    if (!v || !head) return
+    return run(lease ? 'Force pushing' : 'Pushing', () => v.be.push(head, lease), { after: (r) => afterPush(r as PushResult | void, lease) })
+  }
+
+  const afterPush = (r: PushResult | void, lease?: string) => {
+    if (!r || r.result === 'pushed') return setToast(lease ? 'Force push done' : 'Push done')
+    const v = view!
+    const integrate = (how: PullMode) => () =>
+      run(how === 'rebase' ? 'Rebasing onto the remote' : 'Merging the remote', async () => {
+        try {
+          await v.be.pull(how, head!)
+        } catch (e) {
+          if ((await v.be.status()).state) return 'conflicts'
+          throw e
+        }
+        return v.be.push(head!)
+      }, {
+        after: (x) => (x === 'conflicts' ? setToast('Resolve the conflicts and Continue, then push again.') : afterPush(x as PushResult | void)),
+      })
+    setDialog({ kind: 'push-rejected', branch: head!, ahead: r.ahead, behind: r.behind, rebase: integrate('rebase'), merge: integrate('merge'), force: () => pushHead(r.theirs) })
+  }
+
+  const undoRebase = () => {
+    const v = view
+    const u = undo
+    if (!v || !u || !v.be.undoRebase) return
+    confirm(`Put ${head ?? 'the branch'} back where it was before the rebase onto ${u.onto}? Your uncommitted changes are kept.`, () =>
+      run('Undoing rebase', () => v.be.undoRebase!(u.before), {
+        after: (r) => {
+          setUndo(undefined)
+          setToast(r === 'stash-conflicts' ? 'Rebase undone. Your uncommitted changes conflicted when they were put back.' : 'Rebase undone')
+        },
+      }),
+    )
   }
 
   const branchItems = (name: string, oid: string, isHead: boolean): MenuItem[] => {
@@ -533,7 +612,7 @@ export function App(p: { be: Backend; active: boolean; theme: Theme; onTheme: (t
       { id: 'fetch', group: 'Action', label: 'Fetch every remote', hint: '⌘L', run: () => run('Fetch', () => v.be.fetchAll(), { after: () => setToast('Fetch done') }) },
       { id: 'pull', group: 'Action', label: 'Pull', run: () => head && run('Pull', () => v.be.pull(pullMode, head), { after: () => setToast('Pull done') }) },
       ...(v.be.native ? (Object.keys(PULL_MODES) as PullMode[]).map((m) => ({ id: `pullmode:${m}`, group: 'Action', label: `Pull mode: ${PULL_MODES[m]}${m === pullMode ? ' (current)' : ''}`, run: () => setPullMode(m) })) : []),
-      { id: 'push', group: 'Action', label: 'Push', run: () => head && run('Push', () => v.be.push(head), { after: () => setToast('Push done') }) },
+      { id: 'push', group: 'Action', label: 'Push', run: () => pushHead() },
       { id: 'branch', group: 'Action', label: 'New branch from HEAD', hint: '⌘B', run: () => v.data.headOid && setDialog({ kind: 'branch', at: v.data.headOid }) },
       { id: 'stash', group: 'Action', label: 'Stash everything', run: () => setDialog({ kind: 'stash' }) },
       { id: 'pop', group: 'Action', label: 'Apply and drop the newest stash', run: () => run('Applying stash', () => v.be.stashApply(0, true)) },
@@ -545,6 +624,9 @@ export function App(p: { be: Backend; active: boolean; theme: Theme; onTheme: (t
       { id: 'theme', group: 'View', label: theme === 'dark' ? 'Switch to the light theme' : 'Switch to the dark theme', run: () => setTheme(theme === 'dark' ? 'light' : 'dark') },
       { id: 'tree', group: 'View', label: tree ? 'Show files as a flat list' : 'Show files as a tree', run: () => setTree(!tree) },
       { id: 'keys', group: 'View', label: 'Keyboard shortcuts', hint: '?', run: () => setShortcuts(true) },
+      { id: 'repos', group: 'View', label: 'Search open repositories', hint: '⌘⇧A', run: p.onSearchRepos },
+      { id: 'pullall', group: 'Action', label: 'Pull every open repository (fast-forward only)', run: () => p.onAll('pull') },
+      { id: 'fetchall', group: 'Action', label: 'Fetch every open repository', run: () => p.onAll('fetch') },
     ]
     if (solo.size) list.push({ id: 'unsolo', group: 'View', label: 'Show all branches', run: () => setSolo(new Set()) })
     list.push({ id: 'open', group: 'Action', label: 'Open repository…', run: p.onOpenRepo })
@@ -721,7 +803,7 @@ export function App(p: { be: Backend; active: boolean; theme: Theme; onTheme: (t
               </button>
             )}
           </span>
-          <button class="tool" disabled={!!busy || !head} onClick={() => net('Push', () => v.be.push(head!))} title="Push the checked-out branch" aria-label="Push">
+          <button class="tool" disabled={!!busy || !head} onClick={() => pushHead()} title="Push the checked-out branch" aria-label="Push">
             <Icon name="arrow-circle-up" />
           </button>
           <button class="tool" disabled={!!busy} onClick={() => net('Fetch', () => v.be.fetchAll())} title="Fetch every remote (⌘L)" aria-label="Fetch">
@@ -827,7 +909,8 @@ export function App(p: { be: Backend; active: boolean; theme: Theme; onTheme: (t
           onCopy={copy}
           onJump={jump}
           onFileMenu={fileMenu}
-          onAbort={v.be.abort ? () => run('Aborting', () => v.be.abort!()) : undefined}
+          onAbort={v.be.abort ? () => run('Aborting', () => v.be.abort!(), { after: () => setUndo(undefined) }) : undefined}
+          onDropAutostash={v.be.dropAutostash ? () => run('Dropping the saved copy', () => v.be.dropAutostash!()) : undefined}
           onContinue={v.be.continueOp ? () => run('Continuing', () => v.be.continueOp!()) : undefined}
         />
       </div>
@@ -869,6 +952,18 @@ export function App(p: { be: Backend; active: boolean; theme: Theme; onTheme: (t
             saveSettings(s)
           }}
         />
+      )}
+      {undo && v.data.status.state !== 'rebase' && (
+        <div class="undo-bar" role="status">
+          <Icon name="history" />
+          <span>Rebased onto {undo.onto}</span>
+          <button class="secondary" onClick={undoRebase}>
+            Undo rebase
+          </button>
+          <button class="icon" title="Dismiss" aria-label="Dismiss" onClick={() => setUndo(undefined)}>
+            <Icon name="close" />
+          </button>
+        </div>
       )}
       {toast && <div class="toast">{toast}</div>}
     </div>

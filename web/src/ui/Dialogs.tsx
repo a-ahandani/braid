@@ -12,6 +12,7 @@ export type Dialog =
   | { kind: 'confirm'; message: string; action: () => void }
   | { kind: 'error'; title: string; message: string }
   | { kind: 'settings' }
+  | { kind: 'push-rejected'; branch: string; ahead: number; behind: number; rebase: () => void; merge: () => void; force: () => void }
   | { kind: 'repos'; folder: string; repos: { dir: string; name: string }[]; open: (dirs: string[]) => void }
 
 export interface DialogProps {
@@ -164,6 +165,31 @@ export function Dialogs(p: DialogProps) {
             ))}
           </div>
           <Buttons ok={n === 1 ? 'Open 1 repository' : `Open ${n} repositories`} enabled={n > 0} onOk={() => (d.open(d.repos.filter((r) => picked.has(r.dir)).map((r) => r.dir)), p.onClose())} onClose={p.onClose} />
+        </Frame>
+      )
+    }
+    case 'push-rejected': {
+      const n = (k: number) => `${k} commit${k === 1 ? '' : 's'}`
+      return (
+        <Frame title="The remote has commits you don't have" onClose={p.onClose}>
+          <div>
+            {d.branch} on the remote has {n(d.behind)} you don't have yet, and you have {n(d.ahead)} it doesn't. A normal push would drop theirs, so git refused it.
+          </div>
+          <button class="choice" onClick={() => (d.rebase(), p.onClose())}>
+            <b>Rebase onto theirs, then push</b>
+            <span>Puts your {n(d.ahead)} on top of theirs. Keeps history straight. Recommended.</span>
+          </button>
+          <button class="choice" onClick={() => (d.merge(), p.onClose())}>
+            <b>Merge theirs, then push</b>
+            <span>Adds a merge commit that joins both sides.</span>
+          </button>
+          <button class="choice danger" onClick={() => (d.force(), p.onClose())}>
+            <b>Force push</b>
+            <span>Replaces the remote branch with yours and drops their {n(d.behind)}. Stops if the remote changes again first.</span>
+          </button>
+          <div class="buttons">
+            <button onClick={p.onClose}>Cancel</button>
+          </div>
         </Frame>
       )
     }

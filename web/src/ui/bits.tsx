@@ -2,6 +2,15 @@ import { useEffect, useState } from 'preact/hooks'
 
 export const LANES = 10
 
+export function Laptop() {
+  return (
+    <svg class="codicon laptop" width="1em" height="1em" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2" aria-hidden="true">
+      <rect x="3" y="3.5" width="10" height="7" rx="1" />
+      <path d="M1.5 12.5h13" stroke-linecap="round" />
+    </svg>
+  )
+}
+
 export function Icon({ name }: { name: string }) {
   return <i class={`codicon codicon-${name}`} aria-hidden="true" />
 }
