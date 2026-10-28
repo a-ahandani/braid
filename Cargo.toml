@@ -1,6 +1,6 @@
 [package]
 name = "ramulus"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 license = "MIT"
 description = "A desktop git client with a lane graph, for local repositories"
