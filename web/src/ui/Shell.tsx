@@ -42,6 +42,7 @@ export function Shell() {
   const [theme, setTheme] = useState<Theme>(initialTheme)
   const [picker, setPicker] = useState(false)
   const [recentRepos, setRecentRepos] = useState<RepoInfo[]>([])
+  const [found, setFound] = useState<RepoInfo[]>([])
   const [handles, setHandles] = useState<FileSystemDirectoryHandle[]>([])
   const [dialog, setDialog] = useState<Dialog>()
   const [dirty, setDirty] = useState<Set<number>>(new Set())
@@ -109,6 +110,10 @@ export function Shell() {
     }
   }
 
+  const openMany = async (dirs: string[]) => {
+    for (const d of dirs) await openPath(d)
+  }
+
   const browse = async () => {
     try {
       const path = await helper!.pickFolder()
@@ -147,16 +152,22 @@ export function Shell() {
     if (helper)
       helper
         .repos()
-        .then(({ current, recent }) => {
-          openInfo(current)
+        .then(async ({ current, recent }) => {
           setRecentRepos(recent)
+          if (current) return openInfo(current)
+          const { root, repos } = await helper!.findRepos()
+          setFound(repos)
+          if (repos.length) setDialog({ kind: 'repos', folder: root, repos, open: openMany })
         })
         .catch((e) => fail('Could not reach the helper', e))
     else get<FileSystemDirectoryHandle[]>('recent').then((r) => r && setHandles(r))
   }, [])
 
   const choices: Command[] = helper
-    ? [{ id: 'browse', group: 'Open', label: 'Browse for a folder…', run: browse }, ...recentRepos.filter((r) => !tabs.some((t) => t.key === r.dir)).map((r) => ({ id: r.dir, group: 'Recent', label: r.name, hint: r.dir, run: () => openPath(r.dir) }))]
+    ? [
+        { id: 'browse', group: 'Open', label: 'Browse for a folder…', run: browse },
+        ...found.filter((r) => !tabs.some((t) => t.key === r.dir)).map((r) => ({ id: `f:${r.dir}`, group: 'This folder', label: r.name, hint: r.dir, run: () => openPath(r.dir) })),
+        ...recentRepos.filter((r) => !tabs.some((t) => t.key === r.dir)).map((r) => ({ id: r.dir, group: 'Recent', label: r.name, hint: r.dir, run: () => openPath(r.dir) }))]
     : [
         ...(canPick ? [{ id: 'pick', group: 'Open', label: 'Open a folder…', run: pickFolder }] : []),
         { id: 'demo', group: 'Open', label: 'Demo repository', run: openDemo },

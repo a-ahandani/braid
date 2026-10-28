@@ -5,6 +5,7 @@ A local-first Git GUI. Every branch in one graph, editor-grade diffs, and your r
 ```sh
 npx ramulus            # in a repository
 npx ramulus ~/code/app # or point it at one
+npx ramulus ~/code     # or a folder of repositories, each opens in its own tab
 ```
 
 ![The Ramulus branch graph](https://raw.githubusercontent.com/a-ahandani/ramulus/main/docs/screenshots/overview.png)

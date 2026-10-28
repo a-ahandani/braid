@@ -144,7 +144,7 @@ function Lanes({ lay, kind, author, email, drawEdges }: { lay: RowLayout; kind: 
         {node}
       </svg>
       {kind === 'commit' && (
-        <span style={{ position: 'absolute', left: `${nx - 9}px`, top: `${mid - 9}px` }}>
+        <span style={{ position: 'absolute', left: `${nx - 9}px`, top: `${mid - 9}px`, display: 'flex' }}>
           <Avatar name={author} email={email} color={color} size={18} />
         </span>
       )}

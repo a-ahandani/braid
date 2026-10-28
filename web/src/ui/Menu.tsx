@@ -1,9 +1,11 @@
 import { useEffect, useRef } from 'preact/hooks'
+import { Icon } from './bits'
 
 export interface MenuItem {
   label?: string
   danger?: boolean
   sep?: boolean
+  checked?: boolean
   onClick?: () => void
 }
 
@@ -49,6 +51,11 @@ export function Menu({ menu, onClose }: { menu: MenuState; onClose: () => void }
               it.onClick?.()
             }}
           >
+            {it.checked && (
+              <span class="check">
+                <Icon name="check" />
+              </span>
+            )}
             {it.label}
           </button>
         ),

@@ -35,6 +35,23 @@ after(() => {
 })
 
 describe('helper server', () => {
+  it('starts outside a repository and lists the repositories below it', async () => {
+    const bare = createServer({ root, uiDir: root, token, stateFile: join(root, 'state2', 'recent.json') })
+    await new Promise((done) => bare.listen(0, '127.0.0.1', done))
+    const at = `http://127.0.0.1:${bare.address().port}`
+    const post = (op, body = {}) => fetch(`${at}/api/${op}`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-ramulus-token': token }, body: JSON.stringify(body) }).then((r) => r.json())
+    try {
+      assert.equal((await post('repos')).result.current, null)
+      assert.deepEqual((await post('findRepos')).result.repos.map((r) => r.name), ['first', 'second'])
+      assert.match((await post('status')).error, /Open that repository first/)
+      assert.equal((await post('openRepo', { path: second })).result.name, 'second')
+      assert.deepEqual((await post('status', { repo: second })).result.unstaged, [])
+    } finally {
+      bare.close()
+    }
+  })
+
+
   it('only touches repositories the user opened', async () => {
     assert.equal((await call('status', {}, 'b'.repeat(32))).error, 'bad token')
     assert.deepEqual((await call('status')).result.unstaged, [])

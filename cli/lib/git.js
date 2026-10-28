@@ -1,6 +1,6 @@
 import { execFile, spawn } from 'node:child_process'
 import { existsSync, statSync } from 'node:fs'
-import { lstat, readFile, writeFile } from 'node:fs/promises'
+import { lstat, readdir, readFile, writeFile } from 'node:fs/promises'
 import { join, resolve, sep } from 'node:path'
 
 const NUL = '\0'
@@ -290,6 +290,27 @@ export async function writeWorkdir(dir, path, content, expected) {
   if (await lstat(full).then((s) => s.isSymbolicLink(), () => false)) throw new Error('That path is a symbolic link')
   if (expected !== undefined && (await readFile(full).then((b) => b.toString('utf8'), () => '')) !== expected) throw new Error(CHANGED)
   await writeFile(full, content)
+}
+
+export async function findRepos(root, depth = 3, limit = 100) {
+  const found = []
+  let level = [root]
+  for (let d = 0; d < depth && level.length && found.length < limit; d++) {
+    const next = []
+    for (const dir of level) {
+      const entries = await readdir(dir, { withFileTypes: true }).catch(() => [])
+      for (const e of entries) {
+        if (!e.isDirectory() || e.name.startsWith('.') || e.name === 'node_modules') continue
+        const full = join(dir, e.name)
+        if (existsSync(join(full, '.git'))) found.push(full)
+        else next.push(full)
+        if (found.length >= limit) break
+      }
+      if (found.length >= limit) break
+    }
+    level = next
+  }
+  return found.sort((a, b) => a.localeCompare(b))
 }
 
 const PICKERS = {

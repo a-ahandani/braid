@@ -19,7 +19,8 @@ export interface RepoInfo {
 
 export function helperShell(base: string, token: string) {
   return {
-    repos: () => post<{ current: RepoInfo; recent: RepoInfo[] }>(base, token, 'repos', {}),
+    repos: () => post<{ current: RepoInfo | null; recent: RepoInfo[] }>(base, token, 'repos', {}),
+    findRepos: () => post<{ root: string; repos: RepoInfo[] }>(base, token, 'findRepos', {}),
     openRepo: (path: string) => post<RepoInfo>(base, token, 'openRepo', { path }),
     pickFolder: () => post<string | null>(base, token, 'pickFolder', {}),
   }

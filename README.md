@@ -6,7 +6,7 @@ A local-first Git GUI. Every branch in one graph, editor-grade diffs, and your r
 npx ramulus
 ```
 
-Run it inside any git repository, or pass a path: `npx ramulus ~/code/app`. Ramulus starts a small server on 127.0.0.1 on top of the `git` you already have and opens the UI in your browser. It needs Node 20 or newer and `git`, and works on macOS, Windows and Linux.
+Run it inside any git repository, or pass a path: `npx ramulus ~/code/app`. Run it in a folder that holds several repositories, such as `~/code`, and it offers to open each one in its own tab. Ramulus starts a small server on 127.0.0.1 on top of the `git` you already have and opens the UI in your browser. It needs Node 20 or newer and `git`, and works on macOS, Windows and Linux.
 
 ![The branch graph of a repository with local and remote branches, a tag, a stash and uncommitted changes](docs/screenshots/overview.png)
 
@@ -40,7 +40,7 @@ Ramulus is Latin for a small branch.
 
 ![Two repositories open in tabs, light theme, with a merge commit selected](docs/screenshots/light.png)
 
-- Open several repositories at once from recent repositories, the system folder picker, or a typed path. Each tab keeps its own selection, filters and draft commit message.
+- Open several repositories at once from recent repositories, the system folder picker, a typed path, or the repositories found in the folder you started from. Each tab keeps its own selection, filters and draft commit message.
 - Only the visible tab watches its folder, so hidden tabs cost nothing and catch up when you come back.
 - Light and dark themes, resizable panels, tree or flat file lists with +/− counts, and a status bar with branch, sync and change counts.
 

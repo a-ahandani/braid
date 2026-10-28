@@ -83,8 +83,8 @@ function watchRepo(dir) {
   return { clients, close: () => (clearTimeout(timer), watcher?.close()) }
 }
 
-export function createServer({ dir, uiDir, token, stateFile = STATE }) {
-  const known = new Set([dir])
+export function createServer({ dir, root = dir, uiDir, token, stateFile = STATE }) {
+  const known = new Set(dir ? [dir] : [])
   const watchers = new Map()
   const readRecent = () => readFile(stateFile, 'utf8').then(JSON.parse, () => [])
   const remember = async (repo) => {
@@ -92,10 +92,11 @@ export function createServer({ dir, uiDir, token, stateFile = STATE }) {
     await mkdir(dirname(stateFile), { recursive: true })
     await writeFile(stateFile, JSON.stringify(list))
   }
-  remember(dir).catch(() => {})
+  if (dir) remember(dir).catch(() => {})
   const info = (repo) => ({ dir: repo, name: basename(repo) })
   const SHELL = {
-    repos: async () => ({ current: info(dir), recent: (await readRecent()).filter((d) => existsSync(d)).map(info) }),
+    repos: async () => ({ current: dir ? info(dir) : null, recent: (await readRecent()).filter((d) => existsSync(d)).map(info) }),
+    findRepos: async () => ({ root, repos: dir ? [] : (await git.findRepos(root)).map(info) }),
     pickFolder: () => git.pickFolder(),
     openRepo: async (b) => {
       const path = resolve(dir, String(b.path ?? '').trim().replace(/^~(?=$|[/\\])/, homedir()))

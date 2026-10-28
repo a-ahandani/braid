@@ -77,9 +77,11 @@ export function Avatar({ name, email, color, size = 20 }: { name: string; email:
       live = false
     }
   }, [email])
+  const photo = !!url && !failed
+  const letters = size < 20 ? initials(name).slice(0, 1) : initials(name)
   return (
-    <span class="avatar" style={{ background: color, width: `${size}px`, height: `${size}px`, fontSize: `${size * 0.45}px` }} title={name}>
-      {url && !failed ? <img src={url} alt="" onError={() => setFailed(true)} /> : initials(name)}
+    <span class={`avatar ${photo ? '' : 'initials'}`} style={{ '--c': color, width: `${size}px`, height: `${size}px`, fontSize: `${Math.round(size * (letters.length > 1 ? 0.4 : 0.5))}px` }} title={name}>
+      {photo ? <img src={url} alt="" onError={() => setFailed(true)} /> : letters}
     </span>
   )
 }

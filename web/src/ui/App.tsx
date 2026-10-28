@@ -69,6 +69,8 @@ function saveSettings(s: NetSettings) {
 
 const clamp = (n: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, n))
 
+const PULL_MODES: Record<PullMode, string> = { merge: 'Merge', 'ff-only': 'Fast-forward only', rebase: 'Rebase' }
+
 export function App(p: { be: Backend; active: boolean; theme: Theme; onTheme: (t: Theme) => void; onOpenRepo: () => void; onDirty: (dirty: boolean) => void }) {
   const theme = p.theme
   const setTheme = p.onTheme
@@ -690,63 +692,73 @@ export function App(p: { be: Backend; active: boolean; theme: Theme; onTheme: (t
   return (
     <div class="app">
       <div class="toolbar">
-        <span class="repo">{v.data.name}</span>
-        <span class="branch">
-          <Icon name="git-branch" />
-          {v.data.headBranch ?? (v.data.headOid ? `detached at ${v.data.headOid.slice(0, 7)}` : 'no commits')}
-        </span>
-        <button disabled={!!busy || !head} onClick={() => net('Pull', () => v.be.pull(pullMode, head!))} title="Fetch and integrate the upstream branch">
-          <Icon name="repo-pull" />
-          Pull
-        </button>
-        {v.be.native && (
-          <select value={pullMode} onChange={(e) => setPullMode((e.target as HTMLSelectElement).value as PullMode)} title="How pull integrates changes">
-            <option value="merge">merge</option>
-            <option value="ff-only">fast-forward only</option>
-            <option value="rebase">rebase</option>
-          </select>
-        )}
-        <button disabled={!!busy || !head} onClick={() => net('Push', () => v.be.push(head!))} title="Push the checked-out branch">
-          <Icon name="repo-push" />
-          Push
-        </button>
-        <button disabled={!!busy} onClick={() => net('Fetch', () => v.be.fetchAll())} title="Fetch every remote (⌘L)">
-          <Icon name="repo-fetch" />
-          Fetch
-        </button>
-        <button disabled={!!busy || !v.data.headOid} onClick={() => setDialog({ kind: 'branch', at: v.data.headOid! })} title="New branch (⌘B)">
-          <Icon name="git-branch" />
-          Branch
-        </button>
-        <button disabled={!!busy || wipCount === 0} onClick={() => setDialog({ kind: 'stash' })} title="Stash everything">
-          <Icon name="git-stash" />
-          Stash
-        </button>
-        <button disabled={!!busy || v.data.stashes.length === 0} onClick={() => run('Applying stash', () => v.be.stashApply(0, true))} title="Apply and drop the newest stash">
-          <Icon name="git-stash-pop" />
-          Pop
-        </button>
-        {busy && <span class="busy">{busy}...</span>}
-        <span class="spacer" />
-        <span class="search">
-          <Icon name="search" />
-          <input ref={filterRef} placeholder="Search commits (⌘F)" value={filter} onInput={(e) => setFilter((e.target as HTMLInputElement).value)} />
-        </span>
-        {filter && <span class="busy">{order.length} results</span>}
-        <button class={`icon ${showLeft ? 'on' : ''}`} onClick={() => setShowLeft(!showLeft)} title="Toggle left panel (⌘J)">
-          <Icon name={showLeft ? 'layout-sidebar-left' : 'layout-sidebar-left-off'} />
-        </button>
-        <button class={`icon ${showRight ? 'on' : ''}`} onClick={() => setShowRight(!showRight)} title="Toggle detail panel (⌘K)">
-          <Icon name={showRight ? 'layout-sidebar-right' : 'layout-sidebar-right-off'} />
-        </button>
-        {!v.be.native && (
-          <button class="icon" onClick={() => setDialog({ kind: 'settings' })} title="Settings: author and remote access">
-            <Icon name="settings-gear" />
+        <div class="tb-side">
+          <span class="repo">{v.data.name}</span>
+          <span class="branch">
+            <Icon name="git-branch" />
+            {v.data.headBranch ?? (v.data.headOid ? `detached at ${v.data.headOid.slice(0, 7)}` : 'no commits')}
+          </span>
+          {busy && <span class="busy">{busy}...</span>}
+        </div>
+        <div class="tb-actions" role="toolbar" aria-label="Repository actions">
+          <span class="split">
+            <button class="tool" disabled={!!busy || !head} onClick={() => net('Pull', () => v.be.pull(pullMode, head!))} title={v.be.native ? `Pull (${PULL_MODES[pullMode]})` : 'Pull'} aria-label="Pull">
+              <Icon name="arrow-circle-down" />
+            </button>
+            {v.be.native && (
+              <button
+                class="tool pull-mode"
+                disabled={!!busy || !head}
+                title="How pull integrates changes"
+                aria-label="Pull options"
+                onClick={(e) => {
+                  const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
+                  setMenu({ x: r.left - 34, y: r.bottom + 4, items: (Object.keys(PULL_MODES) as PullMode[]).map((m) => ({ label: PULL_MODES[m], checked: m === pullMode, onClick: () => setPullMode(m) })) })
+                }}
+              >
+                <Icon name="chevron-down" />
+              </button>
+            )}
+          </span>
+          <button class="tool" disabled={!!busy || !head} onClick={() => net('Push', () => v.be.push(head!))} title="Push the checked-out branch" aria-label="Push">
+            <Icon name="arrow-circle-up" />
           </button>
-        )}
-        <button class="icon" onClick={() => reload()} title="Refresh">
-          <Icon name="refresh" />
-        </button>
+          <button class="tool" disabled={!!busy} onClick={() => net('Fetch', () => v.be.fetchAll())} title="Fetch every remote (⌘L)" aria-label="Fetch">
+            <Icon name="cloud-download" />
+          </button>
+          <span class="sep" />
+          <button class="tool" disabled={!!busy || !v.data.headOid} onClick={() => setDialog({ kind: 'branch', at: v.data.headOid! })} title="New branch (⌘B)" aria-label="New branch">
+            <Icon name="git-branch-create" />
+          </button>
+          <span class="sep" />
+          <button class="tool" disabled={!!busy || wipCount === 0} onClick={() => setDialog({ kind: 'stash' })} title="Stash everything" aria-label="Stash">
+            <Icon name="git-stash" />
+          </button>
+          <button class="tool" disabled={!!busy || v.data.stashes.length === 0} onClick={() => run('Applying stash', () => v.be.stashApply(0, true))} title="Apply and drop the newest stash" aria-label="Pop stash">
+            <Icon name="git-stash-pop" />
+          </button>
+        </div>
+        <div class="tb-side tb-end">
+          <span class="search">
+            <Icon name="search" />
+            <input ref={filterRef} placeholder="Search commits (⌘F)" value={filter} onInput={(e) => setFilter((e.target as HTMLInputElement).value)} />
+          </span>
+          {filter && <span class="busy">{order.length} results</span>}
+          <button class={`icon ${showLeft ? 'on' : ''}`} onClick={() => setShowLeft(!showLeft)} title="Toggle left panel (⌘J)">
+            <Icon name={showLeft ? 'layout-sidebar-left' : 'layout-sidebar-left-off'} />
+          </button>
+          <button class={`icon ${showRight ? 'on' : ''}`} onClick={() => setShowRight(!showRight)} title="Toggle detail panel (⌘K)">
+            <Icon name={showRight ? 'layout-sidebar-right' : 'layout-sidebar-right-off'} />
+          </button>
+          {!v.be.native && (
+            <button class="icon" onClick={() => setDialog({ kind: 'settings' })} title="Settings: author and remote access">
+              <Icon name="settings-gear" />
+            </button>
+          )}
+          <button class="icon" onClick={() => reload()} title="Refresh">
+            <Icon name="refresh" />
+          </button>
+        </div>
       </div>
       <div class={`body ${showLeft ? '' : 'no-left'} ${showRight ? '' : 'no-right'}`} style={{ '--left-w': `${widths.left}px`, '--right-w': `${widths.right}px` }}>
         <LeftPanel

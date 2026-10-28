@@ -12,6 +12,7 @@ export type Dialog =
   | { kind: 'confirm'; message: string; action: () => void }
   | { kind: 'error'; title: string; message: string }
   | { kind: 'settings' }
+  | { kind: 'repos'; folder: string; repos: { dir: string; name: string }[]; open: (dirs: string[]) => void }
 
 export interface DialogProps {
   dialog: Dialog
@@ -57,6 +58,7 @@ export function Dialogs(p: DialogProps) {
   const [name, setName] = useState(d.kind === 'rename' ? d.old : '')
   const [message, setMessage] = useState('')
   const [checkout, setCheckout] = useState(true)
+  const [picked, setPicked] = useState<Set<string>>(() => new Set(d.kind === 'repos' ? d.repos.map((r) => r.dir) : []))
   const [net, setNet] = useState(p.settings)
   const first = useRef<HTMLInputElement>(null)
   useEffect(() => first.current?.focus(), [])
@@ -133,6 +135,38 @@ export function Dialogs(p: DialogProps) {
           <Buttons ok="Yes" danger enabled={true} onOk={() => (d.action(), p.onClose())} onClose={p.onClose} />
         </Frame>
       )
+    case 'repos': {
+      const n = picked.size
+      return (
+        <Frame title="Open the repositories in this folder?" onClose={p.onClose}>
+          <div>
+            <code>{d.folder}</code> is not a git repository. It has {d.repos.length === 1 ? 'one repository' : `${d.repos.length} repositories`} inside, and each one you pick opens in its own tab.
+          </div>
+          <div class="repo-list">
+            {d.repos.map((r, i) => (
+              <label key={r.dir} title={r.dir}>
+                <input
+                  ref={i === 0 ? first : undefined}
+                  type="checkbox"
+                  checked={picked.has(r.dir)}
+                  onChange={() =>
+                    setPicked((s) => {
+                      const next = new Set(s)
+                      if (next.has(r.dir)) next.delete(r.dir)
+                      else next.add(r.dir)
+                      return next
+                    })
+                  }
+                />
+                {r.name}
+                <span class="path">{r.dir.slice(d.folder.length).replace(/^[/\\]/, '')}</span>
+              </label>
+            ))}
+          </div>
+          <Buttons ok={n === 1 ? 'Open 1 repository' : `Open ${n} repositories`} enabled={n > 0} onOk={() => (d.open(d.repos.filter((r) => picked.has(r.dir)).map((r) => r.dir)), p.onClose())} onClose={p.onClose} />
+        </Frame>
+      )
+    }
     case 'error':
       return (
         <Frame title={d.title} onClose={p.onClose}>
