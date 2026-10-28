@@ -1,14 +1,16 @@
 # Ramulus
 
-A local-first Git GUI. Every branch in one graph, editor-grade diffs, and your repositories in tabs. No account, no cloud, no telemetry.
+A local-first Git GUI. Every branch in one graph, editor-grade diffs, and your repositories in a sidebar. No account, no cloud, no telemetry.
 
 ```sh
 npx ramulus
 ```
 
-Run it inside any git repository, or pass a path: `npx ramulus ~/code/app`. Run it in a folder that holds several repositories, such as `~/code`, and it offers to open each one in its own tab. Ramulus starts a small server on 127.0.0.1 on top of the `git` you already have and opens the UI in your browser. It needs Node 20 or newer and `git`, and works on macOS, Windows and Linux.
+Run it inside any git repository, or pass a path: `npx ramulus ~/code/app`. Run it in a folder that holds several repositories, such as `~/code`, and it offers to open each one in the sidebar. Ramulus starts a small server on 127.0.0.1 on top of the `git` you already have and opens the UI in your browser. It needs Node 20 or newer and `git`, and works on macOS, Windows and Linux.
 
-![The branch graph of a repository with local and remote branches, a tag, a stash and uncommitted changes](docs/screenshots/overview.png)
+[![Ramulus in use: opening three repositories, staging one change block, an AI agent drafting the commit message, dragging a branch onto main to merge it, switching to a color scheme from a link, and jumping to another repository](docs/demo.gif)](docs/demo.mp4)
+
+[Watch the demo in full quality](docs/demo.mp4)
 
 ## Why Ramulus
 
@@ -21,6 +23,8 @@ Ramulus is Latin for a small branch.
 ## Features
 
 ### History you can read
+
+![The branch graph of a repository with local and remote branches, a tag, a stash and uncommitted changes](docs/screenshots/overview.png)
 
 - A lane graph with merge, stash and work-in-progress nodes, author avatars, and one label per branch with ahead and behind counts against its upstream.
 - Search commits by message, author, hash or ref. Solo one or two branches to see only their history.
