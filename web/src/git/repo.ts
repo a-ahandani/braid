@@ -34,6 +34,10 @@ export interface BranchInfo {
   name: string
   oid: string
   isHead: boolean
+  upstream?: string
+  ahead?: number
+  behind?: number
+  gone?: boolean
 }
 
 export interface StashInfo {
@@ -48,6 +52,8 @@ export interface FileChange {
   path: string
   kind: ChangeKind
   conflict?: boolean
+  added?: number
+  deleted?: number
 }
 
 export interface WorkStatus {

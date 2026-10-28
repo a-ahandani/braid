@@ -1,8 +1,8 @@
 import type { JSX } from 'preact'
 import { useEffect, useRef, useState } from 'preact/hooks'
 import type { RowLayout } from '../git/graph'
-import type { Commit, RefLabel } from '../git/repo'
-import { Avatar, fmtDate, laneColor, short } from './bits'
+import type { BranchInfo, Commit, RefLabel } from '../git/repo'
+import { Avatar, ago, fmtDate, laneColor, short } from './bits'
 
 export const ROW_H = 26
 const COL_W = 20
@@ -10,26 +10,88 @@ const GUTTER = 22
 const NODE_R = 9.5
 const MERGE_R = 5.5
 
+export interface PillData {
+  key: string
+  name: string
+  local?: RefLabel
+  remote?: RefLabel
+  tag?: RefLabel
+  current: boolean
+  ahead?: number
+  behind?: number
+}
+
+export interface DropInfo {
+  source: PillData
+  rowIndex: number
+  x: number
+  y: number
+}
+
 export interface GraphProps {
   rows: Commit[]
-  layout: RowLayout[]
+  layoutOf: (index: number) => RowLayout
   maxCol: number
   refsByOid: Map<string, RefLabel[]>
+  branches: BranchInfo[]
   order: number[]
-  filtered: boolean
+  showEdges: boolean
   selectedIndex: number
   scrollTo?: number
   wipCount: number
   hasMore: boolean
+  soloCount: number
   onSelect: (index: number) => void
   onContextMenu: (e: MouseEvent, index: number) => void
-  onPillDoubleClick: (label: RefLabel) => void
+  onPillDoubleClick: (pill: PillData) => void
+  onDrop: (info: DropInfo) => void
   onLoadMore: () => void
   onScrolled: () => void
+  onClearSolo: () => void
 }
 
 function laneX(col: number): number {
   return 3 + GUTTER + col * COL_W + COL_W / 2
+}
+
+export function groupPills(refs: RefLabel[], branches: BranchInfo[]): PillData[] {
+  const byName = new Map<string, PillData>()
+  const get = (key: string, name: string) => {
+    let p = byName.get(key)
+    if (!p) {
+      p = { key, name, current: false }
+      byName.set(key, p)
+    }
+    return p
+  }
+  for (const l of refs) {
+    if (l.kind === 'head') {
+      const p = get(`b:${l.name}`, l.name)
+      p.local = l
+      p.current = !!l.current
+      const b = branches.find((x) => x.name === l.name)
+      if (b?.upstream) {
+        p.ahead = b.ahead
+        p.behind = b.behind
+      }
+    } else if (l.kind === 'remote') {
+      const bare = l.name.slice(l.name.indexOf('/') + 1)
+      const localHere = refs.some((r) => r.kind === 'head' && r.name === bare && branches.find((x) => x.name === bare)?.upstream === l.name)
+      const p = localHere ? get(`b:${bare}`, bare) : get(`r:${l.name}`, l.name)
+      p.remote = l
+    } else {
+      const p = get(`t:${l.name}`, l.name)
+      p.tag = l
+    }
+  }
+  return [...byName.values()].sort((a, b) => rank(a) - rank(b))
+}
+
+function rank(p: PillData): number {
+  if (p.current) return 0
+  if (p.local) return 1
+  if (p.remote) return 2
+  return 3
 }
 
 function Lanes({ lay, kind, author, email, drawEdges }: { lay: RowLayout; kind: Commit['kind']; author: string; email: string; drawEdges: boolean }) {
@@ -90,14 +152,33 @@ function Lanes({ lay, kind, author, email, drawEdges }: { lay: RowLayout; kind: 
   )
 }
 
-export function Pill({ label, color, onDoubleClick }: { label: RefLabel; color: string; onDoubleClick?: () => void }) {
-  const bg = label.current ? `color-mix(in srgb, ${color} 45%, transparent)` : `color-mix(in srgb, ${color} 25%, transparent)`
-  const title =
-    label.kind === 'head' ? (label.current ? `${label.name} (checked out)` : `Branch ${label.name}. Double-click to switch.`) : label.kind === 'remote' ? `Remote branch ${label.name}` : `Tag ${label.name}`
+export function Pill({ pill, color, onDoubleClick, onPointerDown }: { pill: PillData; color: string; onDoubleClick?: () => void; onPointerDown?: (e: PointerEvent) => void }) {
+  const bg = pill.current ? `color-mix(in srgb, ${color} 45%, transparent)` : `color-mix(in srgb, ${color} 25%, transparent)`
+  const parts: string[] = []
+  if (pill.local) parts.push(pill.current ? 'Checked out' : 'Local branch. Double-click to switch, drag onto a commit to merge or rebase.')
+  if (pill.remote) parts.push(`Remote: ${pill.remote.name}`)
+  if (pill.tag) parts.push('Tag')
+  if (pill.ahead || pill.behind) parts.push(`${pill.ahead ?? 0} ahead, ${pill.behind ?? 0} behind its upstream`)
+  const draggable = !!(pill.local || pill.remote)
   return (
-    <span class={`pill ${label.current ? 'current' : ''}`} style={{ background: bg, outline: label.current ? `1px solid ${color}` : undefined }} title={title} onDblClick={onDoubleClick}>
-      <span class={`ic ${label.kind}`} style={{ background: color, color }} />
-      {label.name}
+    <span
+      class={`pill ${pill.current ? 'current' : ''}`}
+      style={{ background: bg, outline: pill.current ? `1px solid ${color}` : undefined }}
+      title={`${pill.name}\n${parts.join('\n')}`}
+      onDblClick={onDoubleClick}
+      data-draggable={draggable ? '1' : undefined}
+      onPointerDown={(e) => draggable && e.button === 0 && onPointerDown?.(e)}
+    >
+      {pill.local && <span class="ic head" style={{ background: color }} />}
+      {pill.remote && <span class="ic remote" style={{ color }} />}
+      {pill.tag && <span class="ic tag" style={{ background: color }} />}
+      {pill.name}
+      {!!(pill.ahead || pill.behind) && (
+        <span class="track">
+          {pill.ahead ? `↑${pill.ahead}` : ''}
+          {pill.behind ? `↓${pill.behind}` : ''}
+        </span>
+      )}
     </span>
   )
 }
@@ -106,6 +187,37 @@ export function GraphView(p: GraphProps) {
   const box = useRef<HTMLDivElement>(null)
   const [scrollTop, setScrollTop] = useState(0)
   const [height, setHeight] = useState(600)
+  const [dropRow, setDropRow] = useState<number>()
+  const dragging = useRef<PillData | undefined>(undefined)
+  const startDrag = (pill: PillData, e: PointerEvent) => {
+    const sx = e.clientX
+    const sy = e.clientY
+    let active = false
+    let over: number | undefined
+    const move = (ev: PointerEvent) => {
+      if (!active && Math.hypot(ev.clientX - sx, ev.clientY - sy) < 5) return
+      if (!active) {
+        active = true
+        dragging.current = pill
+        document.body.style.cursor = 'grabbing'
+      }
+      const row = document.elementFromPoint(ev.clientX, ev.clientY)?.closest<HTMLElement>('.row[data-idx]')
+      const idx = row ? Number(row.dataset.idx) : undefined
+      const c = idx === undefined ? undefined : p.rows[idx]
+      over = c && c.kind !== 'wip' ? idx : undefined
+      setDropRow(over)
+    }
+    const up = (ev: PointerEvent) => {
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', up)
+      document.body.style.cursor = ''
+      setDropRow(undefined)
+      if (active && over !== undefined) p.onDrop({ source: pill, rowIndex: over, x: ev.clientX, y: ev.clientY })
+      dragging.current = undefined
+    }
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', up)
+  }
   useEffect(() => {
     const el = box.current
     if (!el) return
@@ -116,15 +228,15 @@ export function GraphView(p: GraphProps) {
   }, [])
   useEffect(() => {
     if (p.scrollTo === undefined || !box.current) return
-    const pos = p.filtered ? p.order.indexOf(p.scrollTo) : p.scrollTo
+    const pos = p.order.indexOf(p.scrollTo)
     if (pos >= 0) box.current.scrollTop = Math.max(0, pos * ROW_H - height / 2 + ROW_H / 2)
     p.onScrolled()
   }, [p.scrollTo])
-  const count = p.order.length + (p.hasMore && !p.filtered ? 1 : 0)
+  const count = p.order.length + (p.hasMore && p.showEdges ? 1 : 0)
   const start = Math.max(0, Math.floor(scrollTop / ROW_H) - 5)
   const end = Math.min(count, Math.ceil((scrollTop + height) / ROW_H) + 5)
   const graphW = Math.min(420, Math.max(56, 3 + GUTTER + (p.maxCol + 1) * COL_W + 6))
-  const cols = `minmax(150px, 22%) ${graphW}px 1fr 40px 150px 72px`
+  const cols = `minmax(150px, 22%) ${graphW}px 1fr 40px 120px 72px`
   const items: JSX.Element[] = []
   for (let i = start; i < end; i++) {
     const top = i * ROW_H
@@ -138,16 +250,16 @@ export function GraphView(p: GraphProps) {
     }
     const idx = p.order[i]
     const c = p.rows[idx]
-    const lay = p.layout[idx]
+    const lay = p.layoutOf(idx)
     const color = laneColor(lay.column)
-    const refs = c.kind === 'wip' ? [] : (p.refsByOid.get(c.id) ?? [])
-    const sorted = [...refs].sort((a, b) => rank(a) - rank(b))
+    const pills = c.kind === 'wip' ? [] : groupPills(p.refsByOid.get(c.id) ?? [], p.branches)
     items.push(
       <div
         key={c.id}
-        class={`row ${idx === p.selectedIndex ? 'selected' : ''}`}
+        class={`row ${idx === p.selectedIndex ? 'selected' : ''} ${dropRow === idx ? 'drop' : ''}`}
         style={{ top: `${top}px`, '--cols': cols }}
-        onClick={() => p.onSelect(idx)}
+        data-idx={idx}
+        onClick={() => !dragging.current && p.onSelect(idx)}
         onContextMenu={(e) => {
           e.preventDefault()
           p.onContextMenu(e, idx)
@@ -155,14 +267,22 @@ export function GraphView(p: GraphProps) {
         title={c.body ? `${c.summary}\n\n${c.body}` : undefined}
       >
         <div class="refs">
-          {sorted.map((l) => (
-            <Pill key={l.kind + l.name} label={l} color={color} onDoubleClick={() => p.onPillDoubleClick(l)} />
+          {pills.map((pill) => (
+            <Pill
+              key={pill.key}
+              pill={pill}
+              color={color}
+              onDoubleClick={() => p.onPillDoubleClick(pill)}
+              onPointerDown={(e) => startDrag(pill, e)}
+            />
           ))}
         </div>
-        <Lanes lay={lay} kind={c.kind} author={c.author} email={c.email} drawEdges={!p.filtered} />
+        <Lanes lay={lay} kind={c.kind} author={c.author} email={c.email} drawEdges={p.showEdges} />
         <div class={`msg ${c.kind}`}>{c.kind === 'wip' ? `Uncommitted changes · ${p.wipCount} file${p.wipCount === 1 ? '' : 's'}` : c.summary}</div>
         <div class="author">{c.kind !== 'wip' && <Avatar name={c.author} email={c.email} color={color} />}</div>
-        <div class="date">{c.kind !== 'wip' && fmtDate(c.time)}</div>
+        <div class="date" title={c.kind !== 'wip' ? fmtDate(c.time) : undefined}>
+          {c.kind !== 'wip' && ago(c.time)}
+        </div>
         <div class="sha">{c.kind !== 'wip' && short(c.id)}</div>
       </div>,
     )
@@ -172,9 +292,16 @@ export function GraphView(p: GraphProps) {
       <div class="graph-header" style={{ '--cols': cols }}>
         <div>REFS</div>
         <div>GRAPH</div>
-        <div>MESSAGE</div>
+        <div>
+          MESSAGE
+          {p.soloCount > 0 && (
+            <span class="chip" onClick={p.onClearSolo} title="Show every branch again">
+              Soloing {p.soloCount} branch{p.soloCount === 1 ? '' : 'es'} · show all
+            </span>
+          )}
+        </div>
         <div></div>
-        <div>DATE</div>
+        <div>WHEN</div>
         <div>SHA</div>
       </div>
       <div class="rows" ref={box} onScroll={(e) => setScrollTop((e.currentTarget as HTMLDivElement).scrollTop)}>
@@ -183,9 +310,4 @@ export function GraphView(p: GraphProps) {
       </div>
     </div>
   )
-}
-
-function rank(l: RefLabel): number {
-  if (l.kind === 'head') return l.current ? 0 : 1
-  return l.kind === 'remote' ? 2 : 3
 }

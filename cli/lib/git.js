@@ -1,6 +1,6 @@
-import { execFile } from 'node:child_process'
+import { execFile, spawn } from 'node:child_process'
 import { existsSync, statSync } from 'node:fs'
-import { join } from 'node:path'
+import { join, resolve, sep } from 'node:path'
 
 const NUL = '\0'
 const RS = '\x1e'
@@ -78,9 +78,35 @@ export function parseStatus(porcelainZ) {
   return out
 }
 
+function parseNumstat(text) {
+  const out = new Map()
+  for (const line of text.split('\n')) {
+    const [a, d, ...rest] = line.split('\t')
+    const path = rest.join('\t')
+    if (!path) continue
+    out.set(path.includes(' => ') ? path.split(' => ').pop().replace(/\}$/, '') : path, { added: a === '-' ? 0 : Number(a), deleted: d === '-' ? 0 : Number(d) })
+  }
+  return out
+}
+
+function withStats(files, stats) {
+  for (const f of files) {
+    const s = stats.get(f.path)
+    if (s) Object.assign(f, s)
+  }
+  return files
+}
+
 export async function status(dir) {
-  const { stdout } = await run(dir, ['status', '--porcelain=v1', '-z', '--untracked-files=all'])
-  return { ...parseStatus(stdout), state: await stateOf(dir) }
+  const [st, unstagedStats, stagedStats] = await Promise.all([
+    run(dir, ['status', '--porcelain=v1', '-z', '--untracked-files=all']),
+    run(dir, ['diff', '--numstat', '-M'], { allowFail: true }),
+    run(dir, ['diff', '--numstat', '-M', '--cached'], { allowFail: true }),
+  ])
+  const parsed = parseStatus(st.stdout)
+  withStats(parsed.unstaged, parseNumstat(unstagedStats.stdout))
+  withStats(parsed.staged, parseNumstat(stagedStats.stdout))
+  return { ...parsed, state: await stateOf(dir) }
 }
 
 export function parseLog(text, stashInfo) {
@@ -115,15 +141,17 @@ export async function load(dir, limit = 2000) {
   const local = []
   const remote = []
   const tags = []
-  const refs = await run(dir, ['for-each-ref', '--format=%(refname)%00%(objectname)%00%(*objectname)%00%(symref)', 'refs/heads', 'refs/remotes', 'refs/tags'])
+  const refs = await run(dir, ['for-each-ref', '--format=%(refname)%00%(objectname)%00%(*objectname)%00%(symref)%00%(upstream:short)%00%(upstream:track)', 'refs/heads', 'refs/remotes', 'refs/tags'])
   for (const line of refs.stdout.split('\n')) {
     if (!line) continue
-    const [refname, objectname, peeled, symref] = line.split(NUL)
+    const [refname, objectname, peeled, symref, upstream, track] = line.split(NUL)
     if (symref) continue
     const oid = peeled || objectname
     if (refname.startsWith('refs/heads/')) {
       const name = refname.slice(11)
-      local.push({ name, oid, isHead: name === headBranch })
+      const ahead = Number(/ahead (\d+)/.exec(track ?? '')?.[1] ?? 0)
+      const behind = Number(/behind (\d+)/.exec(track ?? '')?.[1] ?? 0)
+      local.push({ name, oid, isHead: name === headBranch, upstream: upstream || undefined, ahead, behind, gone: /gone/.test(track ?? '') })
       addRef(oid, { name, kind: 'head', current: name === headBranch })
     } else if (refname.startsWith('refs/remotes/')) {
       const name = refname.slice(13)
@@ -182,7 +210,7 @@ async function parentOf(dir, oid) {
 export async function commitFiles(dir, oid) {
   const parent = await parentOf(dir, oid)
   const args = parent ? ['diff-tree', '-r', '-z', '-M', '--name-status', parent, oid] : ['diff-tree', '--root', '-r', '-z', '-M', '--name-status', oid]
-  const { stdout } = await run(dir, args)
+  const [{ stdout }, stats] = await Promise.all([run(dir, args), run(dir, args.map((a) => (a === '--name-status' ? '--numstat' : a)).filter((a) => a !== '-z'), { allowFail: true })])
   const parts = stdout.split(NUL)
   const out = []
   for (let i = 0; i < parts.length - 1; i += 2) {
@@ -195,7 +223,7 @@ export async function commitFiles(dir, oid) {
     if (!path) continue
     out.push({ path, kind: code === 'A' ? 'A' : code === 'D' ? 'D' : 'M' })
   }
-  return out
+  return withStats(out, parseNumstat(stats.stdout))
 }
 
 export function parseDiff(text) {
@@ -217,20 +245,59 @@ export function parseDiff(text) {
   return lines
 }
 
-export async function diff(dir, area, path) {
+async function rawDiff(dir, area, path, ignoreWs = false) {
   safePaths([path])
+  const ws = ignoreWs ? ['-w'] : []
   let args
   if (area.kind === 'commit') {
     const parent = await parentOf(dir, area.oid)
-    args = parent ? ['diff', '--no-color', '-M', parent, area.oid, '--', path] : ['show', '--format=', '--no-color', area.oid, '--', path]
+    args = parent ? ['diff', '--no-color', '-M', ...ws, parent, area.oid, '--', path] : ['show', '--format=', '--no-color', ...ws, area.oid, '--', path]
   } else if (area.kind === 'staged') {
-    args = ['diff', '--no-color', '--cached', '--', path]
+    args = ['diff', '--no-color', '--cached', ...ws, '--', path]
   } else {
     const tracked = (await run(dir, ['ls-files', '--error-unmatch', '--', path], { allowFail: true })).ok
-    args = tracked ? ['diff', '--no-color', '--', path] : ['diff', '--no-color', '--no-index', '--', '/dev/null', path]
+    args = tracked ? ['diff', '--no-color', ...ws, '--', path] : ['diff', '--no-color', '--no-index', '--', '/dev/null', path]
   }
-  const { stdout } = await run(dir, args, { allowFail: true })
-  return parseDiff(stdout)
+  return (await run(dir, args, { allowFail: true })).stdout
+}
+
+export async function diff(dir, area, path, ignoreWs) {
+  return parseDiff(await rawDiff(dir, area, path, ignoreWs))
+}
+
+export function splitPatch(text) {
+  const lines = text.split('\n')
+  const first = lines.findIndex((l) => l.startsWith('@@'))
+  if (first < 0) return { header: text, hunks: [] }
+  const header = lines.slice(0, first).join('\n') + '\n'
+  const hunks = []
+  for (const l of lines.slice(first)) {
+    if (l.startsWith('@@')) hunks.push([])
+    hunks[hunks.length - 1].push(l)
+  }
+  return { header, hunks: hunks.map((h) => h.join('\n').replace(/\n+$/, '') + '\n') }
+}
+
+export async function applyHunk(dir, area, path, hunk, op) {
+  if (!['stage', 'unstage', 'discard'].includes(op)) throw new Error('Invalid hunk operation')
+  const source = op === 'unstage' ? { kind: 'staged' } : { kind: 'unstaged' }
+  if (area.kind !== source.kind) throw new Error('That hunk is not in the expected area')
+  const { header, hunks } = splitPatch(await rawDiff(dir, source, path))
+  const piece = hunks[Number(hunk)]
+  if (!piece) throw new Error('Hunk not found; the file changed, refresh and try again')
+  const patch = header + piece
+  const args = op === 'stage' ? ['apply', '--cached', '--recount', '--whitespace=nowarn'] : op === 'unstage' ? ['apply', '--cached', '--reverse', '--recount', '--whitespace=nowarn'] : ['apply', '--reverse', '--recount', '--whitespace=nowarn']
+  await run(dir, args, { input: patch })
+}
+
+export function openPath(dir, path) {
+  safePaths([path])
+  const full = resolve(dir, path)
+  if (!full.startsWith(resolve(dir) + sep)) throw new Error('Path is outside the repository')
+  if (!existsSync(full)) throw new Error('That file no longer exists')
+  const cmd = process.platform === 'darwin' ? 'open' : process.platform === 'win32' ? 'cmd' : 'xdg-open'
+  const args = process.platform === 'win32' ? ['/c', 'start', '', full] : [full]
+  spawn(cmd, args, { stdio: 'ignore', detached: true }).on('error', () => {}).unref()
 }
 
 export async function stage(dir, paths) {

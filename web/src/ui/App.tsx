@@ -1,17 +1,20 @@
 import { get, set } from 'idb-keyval'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'preact/hooks'
 import { FsaFs } from '../fs/fsa'
-import type { Backend, PullMode } from '../git/backend'
+import type { Backend, HunkOp, PullMode } from '../git/backend'
 import { demoRepo } from '../git/demo'
 import { layout, type RowLayout } from '../git/graph'
 import { httpBackend } from '../git/remote'
-import { localBackend, PAGE, type Commit, type Ctx, type DiffArea, type DiffLine, type FileChange, type NetSettings, type RefLabel, type RepoData } from '../git/repo'
-import { laneColor } from './bits'
-import { DetailPanel, type FileSel } from './DetailPanel'
+import { localBackend, PAGE, type Commit, type Ctx, type DiffArea, type DiffLine, type FileChange, type NetSettings, type RepoData } from '../git/repo'
+import { laneColor, short } from './bits'
+import { DetailPanel, type DiffOptions, type FileSel } from './DetailPanel'
 import { Dialogs, type Dialog } from './Dialogs'
-import { GraphView } from './GraphView'
+import { GraphView, type DropInfo, type PillData } from './GraphView'
 import { LeftPanel } from './LeftPanel'
 import { Menu, type MenuItem, type MenuState } from './Menu'
+import { Palette, type Command } from './Palette'
+import { Shortcuts } from './Shortcuts'
+import { Splitter } from './Splitter'
 
 interface View {
   be: Backend
@@ -26,9 +29,10 @@ interface View {
 type Sel = { kind: 'wip' } | { kind: 'commit'; oid: string }
 
 const WIP = '0000000000000000000000000000000000000000'
-const SETTINGS_KEY = 'ramify.net'
+const SETTINGS_KEY = 'ramulus.net'
 const canPick = typeof window !== 'undefined' && 'showDirectoryPicker' in window
 const helperToken = typeof location !== 'undefined' && /^#[0-9a-f]{32}$/.test(location.hash) ? location.hash.slice(1) : undefined
+const stored = (key: string) => (typeof localStorage === 'undefined' ? null : localStorage.getItem(key))
 
 function buildView(be: Backend, data: RepoData, limit: number): View {
   const rows: Commit[] = [...data.commits]
@@ -65,28 +69,43 @@ function saveSettings(s: NetSettings) {
   sessionStorage.setItem(SETTINGS_KEY + '.token', token)
 }
 
+const clamp = (n: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, n))
+
 export function App() {
   const [view, setView] = useState<View>()
   const [sel, setSel] = useState<Sel>()
   const [fileSel, setFileSel] = useState<FileSel>()
   const [commitFiles, setCommitFiles] = useState<FileChange[]>([])
   const [diff, setDiff] = useState<DiffLine[]>([])
+  const [diffOptions, setDiffOptions] = useState<DiffOptions>({ wrap: false, ignoreWs: false })
+  const [tree, setTreeState] = useState(() => stored('ramulus.tree') === '1')
   const [summary, setSummary] = useState('')
   const [description, setDescription] = useState('')
   const [amend, setAmend] = useState(false)
   const [filter, setFilter] = useState('')
+  const [solo, setSolo] = useState<Set<string>>(new Set())
   const [dialog, setDialog] = useState<Dialog>()
   const [menu, setMenu] = useState<MenuState>()
+  const [palette, setPalette] = useState(false)
+  const [shortcuts, setShortcuts] = useState(false)
   const [busy, setBusy] = useState<string>()
   const [toast, setToast] = useState<string>()
   const [showLeft, setShowLeft] = useState(true)
   const [showRight, setShowRight] = useState(true)
+  const [widths, setWidths] = useState(() => ({ left: Number(stored('ramulus.left')) || 240, right: Number(stored('ramulus.right')) || 440 }))
+  const [theme, setTheme] = useState<'dark' | 'light'>(() => (stored('ramulus.theme') as 'dark' | 'light') || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark'))
   const [scrollTo, setScrollTo] = useState<number>()
+  const [updatedAt, setUpdatedAt] = useState<Date>()
   const [recent, setRecent] = useState<FileSystemDirectoryHandle[]>([])
   const [settings, setSettings] = useState<NetSettings>(loadSettings)
   const [pullMode, setPullMode] = useState<PullMode>('merge')
   const settingsRef = useRef(settings)
   settingsRef.current = settings
+  const overlayRef = useRef(false)
+  const openPalette = (on: boolean) => {
+    overlayRef.current = on
+    setPalette(on)
+  }
   const viewRef = useRef(view)
   viewRef.current = view
 
@@ -94,16 +113,29 @@ export function App() {
     get<FileSystemDirectoryHandle[]>('recent').then((r) => r && setRecent(r))
   }, [])
   useEffect(() => {
+    document.documentElement.dataset.theme = theme
+    localStorage.setItem('ramulus.theme', theme)
+  }, [theme])
+  useEffect(() => {
+    localStorage.setItem('ramulus.left', String(widths.left))
+    localStorage.setItem('ramulus.right', String(widths.right))
+  }, [widths])
+  useEffect(() => {
     if (!toast) return
     const t = setTimeout(() => setToast(undefined), 4000)
     return () => clearTimeout(t)
   }, [toast])
+  const setTree = (t: boolean) => {
+    setTreeState(t)
+    localStorage.setItem('ramulus.tree', t ? '1' : '0')
+  }
 
   const fail = (title: string, e: unknown) => setDialog({ kind: 'error', title, message: e instanceof Error ? e.message : String(e) })
 
   const applyData = useCallback((be: Backend, data: RepoData, limit: number, fresh: boolean) => {
     const v = buildView(be, data, limit)
     setView(v)
+    setUpdatedAt(new Date())
     setSel((cur) => {
       const hasWip = v.rows[0]?.kind === 'wip'
       const keep = !fresh && cur && (cur.kind === 'wip' ? hasWip : v.indexOf.has(cur.oid))
@@ -113,6 +145,7 @@ export function App() {
     if (fresh) {
       setFileSel(undefined)
       setFilter('')
+      setSolo(new Set())
       setSummary('')
       setDescription('')
       setAmend(false)
@@ -217,13 +250,13 @@ export function App() {
     }
     let live = true
     view.be
-      .diffLines(fileSel.area, fileSel.path)
+      .diffLines(fileSel.area, fileSel.path, diffOptions.ignoreWs)
       .then((d) => live && setDiff(d))
       .catch(() => live && setDiff([]))
     return () => {
       live = false
     }
-  }, [view, fileSel])
+  }, [view, fileSel, diffOptions.ignoreWs])
 
   useEffect(() => {
     if (!view || !fileSel) return
@@ -234,12 +267,31 @@ export function App() {
     if (!exists) setFileSel(undefined)
   }, [view, commitFiles, fileSel])
 
+  const soloInfo = useMemo(() => {
+    if (!view || solo.size === 0) return undefined
+    const tips = new Set<string>()
+    for (const b of [...view.data.local, ...view.data.remote]) if (solo.has(b.name)) tips.add(b.oid)
+    const parents = new Map(view.rows.map((r) => [r.id, r.parents]))
+    const keep = new Set<string>()
+    const stack = [...tips]
+    while (stack.length) {
+      const id = stack.pop()!
+      if (keep.has(id) || !parents.has(id)) continue
+      keep.add(id)
+      for (const p of parents.get(id) ?? []) stack.push(p)
+    }
+    if (view.data.headOid && keep.has(view.data.headOid)) keep.add(WIP)
+    const indices = view.rows.map((_, i) => i).filter((i) => keep.has(view.rows[i].id))
+    const l = layout(indices.map((i) => view.rows[i]))
+    return { indices, layoutByIndex: new Map(indices.map((i, k) => [i, l.rows[k]])), maxCol: l.maxCol }
+  }, [view, solo])
+
   const order = useMemo(() => {
     if (!view) return []
-    const all = view.rows.map((_, i) => i)
+    const base = soloInfo?.indices ?? view.rows.map((_, i) => i)
     const q = filter.trim().toLowerCase()
-    if (!q) return all
-    return all.filter((i) => {
+    if (!q) return base
+    return base.filter((i) => {
       const c = view.rows[i]
       return (
         c.summary.toLowerCase().includes(q) ||
@@ -248,7 +300,7 @@ export function App() {
         (view.data.refsByOid.get(c.id) ?? []).some((l) => l.name.toLowerCase().includes(q))
       )
     })
-  }, [view, filter])
+  }, [view, filter, soloInfo])
 
   const selectedIndex = !view || !sel ? -1 : sel.kind === 'wip' ? (view.rows[0]?.kind === 'wip' ? 0 : -1) : (view.indexOf.get(sel.oid) ?? -1)
 
@@ -270,6 +322,7 @@ export function App() {
       setToast('That commit is not loaded in the graph yet.')
       return
     }
+    if (soloInfo && !soloInfo.indices.includes(i)) setSolo(new Set())
     select(i)
     setScrollTo(i)
   }
@@ -277,6 +330,14 @@ export function App() {
   const copy = (s: string) => {
     navigator.clipboard.writeText(s).then(() => setToast('Copied!'))
   }
+
+  const toggleSolo = (name: string) =>
+    setSolo((s) => {
+      const next = new Set(s)
+      if (next.has(name)) next.delete(name)
+      else next.add(name)
+      return next
+    })
 
   const head = view?.data.headBranch
   const confirm = (message: string, action: () => void) => setDialog({ kind: 'confirm', message, action })
@@ -304,14 +365,20 @@ export function App() {
     })
   }
 
+  const rebaseOnto = (target: string) => {
+    const v = view!
+    return run('Rebasing', () => v.be.rebase!(target), { after: conflictToast })
+  }
+
   const branchItems = (name: string, oid: string, isHead: boolean): MenuItem[] => {
     const v = view!
     const items: MenuItem[] = []
     if (!isHead) {
       items.push({ label: `Switch to ${name}`, onClick: () => run('Switching branch', () => v.be.checkoutBranch(name)) })
       if (head) items.push({ label: `Merge ${name} into ${head}`, onClick: () => mergeInto(name) })
-      if (head && v.be.rebase) items.push({ label: `Rebase ${head} onto ${name}`, onClick: () => run('Rebasing', () => v.be.rebase!(name), { after: conflictToast }) })
+      if (head && v.be.rebase) items.push({ label: `Rebase ${head} onto ${name}`, onClick: () => rebaseOnto(name) })
     }
+    items.push({ label: solo.has(name) ? `Stop soloing ${name}` : `Solo ${name}`, onClick: () => toggleSolo(name) })
     items.push({ label: `Rename ${name}`, onClick: () => setDialog({ kind: 'rename', old: name }) })
     items.push({ label: 'New branch from here', onClick: () => setDialog({ kind: 'branch', at: oid }) })
     items.push({ label: 'Copy name', onClick: () => copy(name) })
@@ -327,7 +394,8 @@ export function App() {
     return [
       { label: `Switch to ${name}`, onClick: () => run('Switching branch', () => v.be.checkoutRemote(name)) },
       ...(head ? [{ label: `Merge ${name} into ${head}`, onClick: () => mergeInto(name) }] : []),
-      ...(head && v.be.rebase ? [{ label: `Rebase ${head} onto ${name}`, onClick: () => run('Rebasing', () => v.be.rebase!(name), { after: conflictToast }) }] : []),
+      ...(head && v.be.rebase ? [{ label: `Rebase ${head} onto ${name}`, onClick: () => rebaseOnto(name) }] : []),
+      { label: solo.has(name) ? `Stop soloing ${name}` : `Solo ${name}`, onClick: () => toggleSolo(name) },
       { label: 'Copy name', onClick: () => copy(name) },
     ]
   }
@@ -397,7 +465,7 @@ export function App() {
       items.push({ label: 'New tag here', onClick: () => setDialog({ kind: 'tag', at: c.id }) })
       if (head && !isHead) {
         items.push({ sep: true })
-        if (v.be.rebase) items.push({ label: `Rebase ${head} here`, onClick: () => run('Rebasing', () => v.be.rebase!(c.id), { after: conflictToast }) })
+        if (v.be.rebase) items.push({ label: `Rebase ${head} here`, onClick: () => rebaseOnto(c.id) })
         if (v.be.cherryPick) items.push({ label: 'Cherry-pick this commit', onClick: () => run('Cherry-picking', () => v.be.cherryPick!(c.id), { after: conflictToast }) })
         items.push({ label: `Reset ${head} to this commit...`, onClick: () => setDialog({ kind: 'reset', at: c.id }) })
       }
@@ -413,6 +481,7 @@ export function App() {
     const items: MenuItem[] = []
     if (area.kind === 'unstaged') items.push({ label: 'Stage', onClick: () => run('Staging', () => v.be.stage([f]), { statusOnly: true }) })
     if (area.kind === 'staged') items.push({ label: 'Unstage', onClick: () => run('Unstaging', () => v.be.unstage([f.path]), { statusOnly: true }) })
+    if (v.be.openPath && f.kind !== 'D') items.push({ label: 'Open file', onClick: () => v.be.openPath!(f.path).catch((err) => fail('Could not open the file', err)) })
     items.push({ label: 'Copy path', onClick: () => copy(f.path) })
     if (area.kind === 'unstaged') {
       items.push({ sep: true })
@@ -427,25 +496,94 @@ export function App() {
     confirm(what, () => run('Discarding', () => v.be.discard(files), { statusOnly: true }))
   }
 
-  const pillDoubleClick = (l: RefLabel) => {
-    if (!view) return
-    if (l.kind === 'head' && !l.current) run('Switching branch', () => view.be.checkoutBranch(l.name))
-    if (l.kind === 'remote') run('Switching branch', () => view.be.checkoutRemote(l.name))
+  const applyHunk = (area: DiffArea, path: string, hunkIdx: number, op: HunkOp) => {
+    const v = view!
+    if (!v.be.applyHunk) return
+    const go = () => run(op === 'stage' ? 'Staging hunk' : op === 'unstage' ? 'Unstaging hunk' : 'Discarding hunk', () => v.be.applyHunk!(area, path, hunkIdx, op), { statusOnly: true })
+    if (op === 'discard') confirm(`This hunk of "${path}" will be reverted in the working tree. Continue?`, go)
+    else go()
   }
+
+  const pillDoubleClick = (pill: PillData) => {
+    if (!view) return
+    if (pill.local && !pill.current) run('Switching branch', () => view.be.checkoutBranch(pill.local!.name))
+    else if (pill.remote && !pill.local) run('Switching branch', () => view.be.checkoutRemote(pill.remote!.name))
+  }
+
+  const onDrop = ({ source, rowIndex, x, y }: DropInfo) => {
+    const v = view!
+    const c = v.rows[rowIndex]
+    const refs = v.data.refsByOid.get(c.id) ?? []
+    const targetHead = refs.find((l) => l.kind === 'head' && l.current)
+    const targetRef = refs.find((l) => l.kind === 'head') ?? refs.find((l) => l.kind === 'remote')
+    const targetName = targetRef?.name ?? short(c.id)
+    const srcName = source.local?.name ?? source.remote!.name
+    const items: MenuItem[] = []
+    if (targetHead && srcName !== targetHead.name) items.push({ label: `Merge ${srcName} into ${targetHead.name}`, onClick: () => mergeInto(srcName) })
+    if (source.current && head && c.id !== v.data.headOid) {
+      if (v.be.rebase) items.push({ label: `Rebase ${head} onto ${targetName}`, onClick: () => rebaseOnto(targetRef?.name ?? c.id) })
+      items.push({ label: `Reset ${head} to ${targetName}...`, onClick: () => setDialog({ kind: 'reset', at: c.id }) })
+    }
+    if (!source.current && !targetHead) items.push({ label: `Switch to ${srcName} first to rebase it, or drop onto ${head ?? 'the checked-out branch'} to merge` })
+    setMenu({ x, y, items })
+  }
+
+  const commands = useMemo<Command[]>(() => {
+    if (!view) return []
+    const v = view
+    const list: Command[] = [
+      { id: 'fetch', group: 'Action', label: 'Fetch every remote', hint: '⌘L', run: () => run('Fetch', () => v.be.fetchAll(), { after: () => setToast('Fetch done') }) },
+      { id: 'pull', group: 'Action', label: 'Pull', run: () => head && run('Pull', () => v.be.pull(pullMode, head), { after: () => setToast('Pull done') }) },
+      { id: 'push', group: 'Action', label: 'Push', run: () => head && run('Push', () => v.be.push(head), { after: () => setToast('Push done') }) },
+      { id: 'branch', group: 'Action', label: 'New branch from HEAD', hint: '⌘B', run: () => v.data.headOid && setDialog({ kind: 'branch', at: v.data.headOid }) },
+      { id: 'stash', group: 'Action', label: 'Stash everything', run: () => setDialog({ kind: 'stash' }) },
+      { id: 'pop', group: 'Action', label: 'Apply and drop the newest stash', run: () => run('Applying stash', () => v.be.stashApply(0, true)) },
+      { id: 'stageall', group: 'Action', label: 'Stage everything', hint: '⌘⇧S', run: () => run('Staging', () => v.be.stage(v.data.status.unstaged), { statusOnly: true }) },
+      { id: 'unstageall', group: 'Action', label: 'Unstage everything', hint: '⌘⇧U', run: () => run('Unstaging', () => v.be.unstage(v.data.status.staged.map((f) => f.path)), { statusOnly: true }) },
+      { id: 'refresh', group: 'View', label: 'Refresh', run: () => reload() },
+      { id: 'left', group: 'View', label: 'Toggle the left panel', hint: '⌘J', run: () => setShowLeft((s) => !s) },
+      { id: 'right', group: 'View', label: 'Toggle the detail panel', hint: '⌘K', run: () => setShowRight((s) => !s) },
+      { id: 'theme', group: 'View', label: theme === 'dark' ? 'Switch to the light theme' : 'Switch to the dark theme', run: () => setTheme(theme === 'dark' ? 'light' : 'dark') },
+      { id: 'tree', group: 'View', label: tree ? 'Show files as a flat list' : 'Show files as a tree', run: () => setTree(!tree) },
+      { id: 'keys', group: 'View', label: 'Keyboard shortcuts', hint: '?', run: () => setShortcuts(true) },
+    ]
+    if (solo.size) list.push({ id: 'unsolo', group: 'View', label: 'Show all branches', run: () => setSolo(new Set()) })
+    if (canPick && !helperToken) list.push({ id: 'open', group: 'Action', label: 'Open a repository folder', run: pickFolder })
+    for (const b of v.data.local) {
+      if (!b.isHead) list.push({ id: `sw:${b.name}`, group: 'Branch', label: `Switch to ${b.name}`, run: () => run('Switching branch', () => v.be.checkoutBranch(b.name)) })
+      list.push({ id: `solo:${b.name}`, group: 'Branch', label: `Solo ${b.name}`, run: () => toggleSolo(b.name) })
+      list.push({ id: `jump:${b.name}`, group: 'Branch', label: `Jump to ${b.name}`, run: () => jump(b.oid) })
+    }
+    for (const b of v.data.remote) list.push({ id: `swr:${b.name}`, group: 'Remote', label: `Switch to ${b.name}`, run: () => run('Switching branch', () => v.be.checkoutRemote(b.name)) })
+    for (const t of v.data.tags) list.push({ id: `tag:${t.name}`, group: 'Tag', label: `Jump to ${t.name}`, run: () => jump(t.oid) })
+    return list
+  }, [view, head, pullMode, theme, tree, solo])
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const mod = e.metaKey || e.ctrlKey
       const typing = e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement
-      if (mod && e.key === 'f') {
+      if (mod && (e.key === 'p' || e.key === 'P')) {
+        e.preventDefault()
+        if (view) openPalette(!palette)
+      } else if (mod && e.key === 'f') {
         e.preventDefault()
         document.getElementById('filter')?.focus()
       } else if (mod && e.key === 'b' && view?.data.headOid) {
         e.preventDefault()
         setDialog({ kind: 'branch', at: view.data.headOid })
+      } else if (mod && e.key === 'l' && view) {
+        e.preventDefault()
+        run('Fetch', () => view.be.fetchAll(), { after: () => setToast('Fetch done') })
       } else if (mod && e.key === 'Enter') {
         e.preventDefault()
         doCommit()
+      } else if (mod && e.shiftKey && (e.key === 's' || e.key === 'S') && view) {
+        e.preventDefault()
+        run('Staging', () => view.be.stage(view.data.status.unstaged), { statusOnly: true })
+      } else if (mod && e.shiftKey && (e.key === 'u' || e.key === 'U') && view) {
+        e.preventDefault()
+        run('Unstaging', () => view.be.unstage(view.data.status.staged.map((f) => f.path)), { statusOnly: true })
       } else if (mod && e.key === 'j') {
         e.preventDefault()
         setShowLeft((s) => !s)
@@ -453,16 +591,30 @@ export function App() {
         e.preventDefault()
         setShowRight((s) => !s)
       } else if (e.key === 'Escape') {
-        if (dialog) setDialog(undefined)
+        if (palette) openPalette(false)
+        else if (shortcuts) setShortcuts(false)
+        else if (dialog) setDialog(undefined)
         else if (filter) setFilter('')
-      } else if (!typing && !dialog && view && (e.key === 'ArrowDown' || e.key === 'ArrowUp' || e.key === 'j' || e.key === 'k')) {
-        e.preventDefault()
-        const step = e.key === 'ArrowDown' || e.key === 'j' ? 1 : -1
-        const pos = order.indexOf(selectedIndex)
-        const next = order[Math.min(order.length - 1, Math.max(0, pos + step))]
-        if (next !== undefined) {
-          select(next)
-          setScrollTo(next)
+        else if (solo.size) setSolo(new Set())
+      } else if (!typing && !dialog && !palette && !overlayRef.current) {
+        if (e.key === '?') {
+          e.preventDefault()
+          setShortcuts(true)
+        } else if ((e.key === 's' || e.key === 'u') && view && fileSel && fileSel.area.kind !== 'commit') {
+          e.preventDefault()
+          const list = fileSel.area.kind === 'staged' ? view.data.status.staged : view.data.status.unstaged
+          const f = list.find((x) => x.path === fileSel.path)
+          if (f && e.key === 's' && fileSel.area.kind === 'unstaged') run('Staging', () => view.be.stage([f]), { statusOnly: true })
+          if (f && e.key === 'u' && fileSel.area.kind === 'staged') run('Unstaging', () => view.be.unstage([f.path]), { statusOnly: true })
+        } else if (view && (e.key === 'ArrowDown' || e.key === 'ArrowUp' || e.key === 'j' || e.key === 'k')) {
+          e.preventDefault()
+          const step = e.key === 'ArrowDown' || e.key === 'j' ? 1 : -1
+          const pos = order.indexOf(selectedIndex)
+          const next = order[Math.min(order.length - 1, Math.max(0, pos + step))]
+          if (next !== undefined) {
+            select(next)
+            setScrollTo(next)
+          }
         }
       }
     }
@@ -470,14 +622,46 @@ export function App() {
     return () => window.removeEventListener('keydown', onKey)
   })
 
+  const statusBar = (v?: View) => {
+    const cur = v?.data.local.find((b) => b.isHead)
+    const changes = v ? v.data.status.staged.length + v.data.status.unstaged.length : 0
+    return (
+      <div class="statusbar">
+        {v && (
+          <>
+            <span>
+              {head ?? (v.data.headOid ? 'detached HEAD' : 'no commits')}
+              {cur?.upstream ? ` · ↑${cur.ahead ?? 0} ↓${cur.behind ?? 0} vs ${cur.upstream}` : head ? ' · no upstream' : ''}
+            </span>
+            {changes > 0 && <span class="warn">{changes} uncommitted change{changes === 1 ? '' : 's'}</span>}
+            {v.data.stashes.length > 0 && <span>{v.data.stashes.length} stash{v.data.stashes.length === 1 ? '' : 'es'}</span>}
+          </>
+        )}
+        <span class="spacer" />
+        {updatedAt && <span title="Last read of the repository">Updated {updatedAt.toLocaleTimeString()}</span>}
+        {v && (
+          <button onClick={() => openPalette(true)} title="Command palette">
+            ⌘⇧P commands
+          </button>
+        )}
+        <button onClick={() => setShortcuts(true)} title="Keyboard shortcuts">
+          ? shortcuts
+        </button>
+        <button onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} title="Switch theme">
+          {theme === 'dark' ? '☀ light' : '☾ dark'}
+        </button>
+      </div>
+    )
+  }
+
   if (!view) {
     return (
       <div class="app">
         <div class="toolbar">
-          <span class="repo">Ramify</span>
+          <span class="repo">Ramulus</span>
         </div>
         <div class="welcome">
-          <h1>Ramify</h1>
+          <h1>Ramulus</h1>
           <p>Every branch of your repository, in one graph.{helperToken ? '' : ' Runs entirely in this browser tab.'}</p>
           {busy && <p class="busy">{busy}...</p>}
           {!helperToken && (
@@ -503,11 +687,13 @@ export function App() {
               )}
               <p class="note">Nothing leaves your machine except avatar lookups on gravatar.com and, when you use them, fetch, pull and push through the CORS proxy you set under Settings.</p>
               <p class="note">
-                For full speed and your SSH keys, run <code>npx ramify-git</code> inside a repository instead.
+                For full speed and your SSH keys, run <code>npx ramulus</code> inside a repository instead.
               </p>
             </>
           )}
         </div>
+        {statusBar()}
+        {shortcuts && <Shortcuts onClose={() => setShortcuts(false)} />}
         {dialog && (
           <Dialogs
             dialog={dialog}
@@ -531,8 +717,9 @@ export function App() {
 
   const v = view
   const current = sel?.kind === 'commit' ? v.rows[v.indexOf.get(sel.oid) ?? -1] : undefined
-  const currentColor = current ? laneColor(v.layout[v.indexOf.get(current.id)!].column) : 'var(--lane-0)'
-  const wipCount = v.data.status.staged.length + v.data.status.unstaged.length
+  const layoutOf = (i: number) => soloInfo?.layoutByIndex.get(i) ?? v.layout[i]
+  const currentColor = current ? laneColor(layoutOf(v.indexOf.get(current.id)!).column) : 'var(--lane-0)'
+  const wipCount = new Set([...v.data.status.staged, ...v.data.status.unstaged].map((f) => f.path)).size
   const dirty = wipCount > 0
   const net = (label: string, fn: () => Promise<unknown>) => run(label, fn, { after: () => setToast(`${label} done`) })
 
@@ -555,7 +742,7 @@ export function App() {
         <button disabled={!!busy || !head} onClick={() => net('Push', () => v.be.push(head!))} title="Push the checked-out branch">
           Push
         </button>
-        <button disabled={!!busy} onClick={() => net('Fetch', () => v.be.fetchAll())} title="Fetch every remote">
+        <button disabled={!!busy} onClick={() => net('Fetch', () => v.be.fetchAll())} title="Fetch every remote (⌘L)">
           Fetch
         </button>
         <button disabled={!!busy || !v.data.headOid} onClick={() => setDialog({ kind: 'branch', at: v.data.headOid! })} title="New branch (⌘B)">
@@ -587,14 +774,16 @@ export function App() {
         </button>
         {canPick && !helperToken && <button onClick={pickFolder}>Open</button>}
       </div>
-      <div class={`body ${showLeft ? '' : 'no-left'} ${showRight ? '' : 'no-right'}`}>
+      <div class={`body ${showLeft ? '' : 'no-left'} ${showRight ? '' : 'no-right'}`} style={{ '--left-w': `${widths.left}px`, '--right-w': `${widths.right}px` }}>
         <LeftPanel
           data={v.data}
           columnOf={(oid) => {
             const i = v.indexOf.get(oid)
-            return i === undefined ? undefined : v.layout[i].column
+            return i === undefined ? undefined : layoutOf(i)?.column
           }}
           selectedOid={sel?.kind === 'commit' ? sel.oid : undefined}
+          solo={solo}
+          onToggleSolo={toggleSolo}
           onJump={jump}
           onCheckout={(name) => run('Switching branch', () => v.be.checkoutBranch(name))}
           onCheckoutRemote={(name) => run('Switching branch', () => v.be.checkoutRemote(name))}
@@ -603,23 +792,29 @@ export function App() {
           onTagMenu={(e, name, oid) => setMenu({ x: e.clientX, y: e.clientY, items: tagItems(name, oid) })}
           onStashMenu={(e, index, message) => setMenu({ x: e.clientX, y: e.clientY, items: stashItems(index, message) })}
         />
+        <Splitter onDrag={(dx) => setWidths((w) => ({ ...w, left: clamp(w.left + dx, 160, 520) }))} />
         <GraphView
           rows={v.rows}
-          layout={v.layout}
-          maxCol={v.maxCol}
+          layoutOf={layoutOf}
+          maxCol={soloInfo?.maxCol ?? v.maxCol}
           refsByOid={v.data.refsByOid}
+          branches={v.data.local}
           order={order}
-          filtered={filter.trim().length > 0}
+          showEdges={filter.trim().length === 0}
           selectedIndex={selectedIndex}
           scrollTo={scrollTo}
           wipCount={wipCount}
-          hasMore={v.data.hasMore}
+          hasMore={v.data.hasMore && !soloInfo}
+          soloCount={solo.size}
           onSelect={select}
           onContextMenu={rowMenu}
           onPillDoubleClick={pillDoubleClick}
+          onDrop={onDrop}
           onLoadMore={() => run('Loading more', async () => applyData(v.be, await v.be.load(v.limit + PAGE), v.limit + PAGE, false))}
           onScrolled={() => setScrollTo(undefined)}
+          onClearSolo={() => setSolo(new Set())}
         />
+        <Splitter onDrag={(dx) => setWidths((w) => ({ ...w, right: clamp(w.right - dx, 300, 900) }))} />
         <DetailPanel
           data={v.data}
           commit={current}
@@ -628,9 +823,14 @@ export function App() {
           isStash={!!current && v.data.stashes.some((s) => s.oid === current.id)}
           selectedFile={fileSel}
           diff={diff}
+          diffOptions={diffOptions}
+          native={v.be.native}
+          tree={tree}
           summary={summary}
           description={description}
           amend={amend}
+          onDiffOptions={setDiffOptions}
+          onTree={setTree}
           onSummary={setSummary}
           onDescription={setDescription}
           onAmend={setAmend}
@@ -640,6 +840,7 @@ export function App() {
           onDiscard={discardFiles}
           onStageAll={() => run('Staging', () => v.be.stage(v.data.status.unstaged), { statusOnly: true })}
           onUnstageAll={() => run('Unstaging', () => v.be.unstage(v.data.status.staged.map((f) => f.path)), { statusOnly: true })}
+          onHunk={applyHunk}
           onCommit={doCommit}
           onCopy={copy}
           onJump={jump}
@@ -648,7 +849,10 @@ export function App() {
           onContinue={v.be.continueOp ? () => run('Continuing', () => v.be.continueOp!()) : undefined}
         />
       </div>
+      {statusBar(v)}
       {menu && <Menu menu={menu} onClose={() => setMenu(undefined)} />}
+      {palette && <Palette commands={commands} onClose={() => openPalette(false)} />}
+      {shortcuts && <Shortcuts onClose={() => setShortcuts(false)} />}
       {dialog && (
         <Dialogs
           dialog={dialog}

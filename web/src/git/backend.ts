@@ -4,13 +4,14 @@ export type RepoState = 'merge' | 'rebase' | 'cherry-pick' | 'revert' | null
 export type PullMode = 'merge' | 'ff-only' | 'rebase'
 export type ResetMode = 'soft' | 'mixed' | 'hard'
 export type MergeResult = 'up-to-date' | 'fast-forward' | 'merged' | 'conflicts' | 'done'
+export type HunkOp = 'stage' | 'unstage' | 'discard'
 
 export interface Backend {
   native: boolean
   load(limit: number): Promise<RepoData>
   status(): Promise<WorkStatus>
   commitFiles(oid: string): Promise<FileChange[]>
-  diffLines(area: DiffArea, path: string): Promise<DiffLine[]>
+  diffLines(area: DiffArea, path: string, ignoreWs?: boolean): Promise<DiffLine[]>
   stage(files: FileChange[]): Promise<void>
   unstage(paths: string[]): Promise<void>
   discard(files: FileChange[]): Promise<void>
@@ -36,5 +37,7 @@ export interface Backend {
   revert?(oid: string): Promise<MergeResult>
   abort?(): Promise<void>
   continueOp?(): Promise<void>
+  applyHunk?(area: DiffArea, path: string, hunk: number, op: HunkOp): Promise<void>
+  openPath?(path: string): Promise<void>
   subscribe?(onChange: () => void): () => void
 }

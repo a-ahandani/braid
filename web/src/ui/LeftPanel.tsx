@@ -6,6 +6,8 @@ export interface LeftProps {
   data: RepoData
   columnOf: (oid: string) => number | undefined
   selectedOid?: string
+  solo: Set<string>
+  onToggleSolo: (refName: string) => void
   onJump: (oid: string) => void
   onCheckout: (name: string) => void
   onCheckoutRemote: (name: string) => void
@@ -27,37 +29,68 @@ function Section({ title, count, open, onToggle }: { title: string; count: numbe
 
 export function LeftPanel(p: LeftProps) {
   const [open, setOpen] = useState({ local: true, remote: true, tags: true, stashes: true })
+  const [filter, setFilter] = useState('')
   const toggle = (k: keyof typeof open) => setOpen({ ...open, [k]: !open[k] })
+  const q = filter.trim().toLowerCase()
+  const show = (name: string) => !q || name.toLowerCase().includes(q)
   const dot = (oid: string) => {
     const col = p.columnOf(oid)
     return <span class="dot" style={{ background: col === undefined ? 'var(--text-3)' : laneColor(col) }} />
   }
+  const soloBtn = (name: string) => (
+    <button
+      class={`solo ${p.solo.has(name) ? 'on' : ''}`}
+      title={p.solo.has(name) ? 'Stop soloing' : 'Solo: show only this branch in the graph'}
+      onClick={(e) => {
+        e.stopPropagation()
+        p.onToggleSolo(name)
+      }}
+    >
+      ◉
+    </button>
+  )
   const byRemote = new Map<string, typeof p.data.remote>()
   for (const b of p.data.remote) {
+    if (!show(b.name)) continue
     const r = b.name.split('/')[0]
     byRemote.set(r, [...(byRemote.get(r) ?? []), b])
   }
+  const local = p.data.local.filter((b) => show(b.name))
+  const tags = p.data.tags.filter((t) => show(t.name))
+  const stashes = p.data.stashes.filter((s) => show(s.message))
   return (
     <div class="left">
-      <Section title="LOCAL" count={p.data.local.length} open={open.local} onToggle={() => toggle('local')} />
+      <div class="left-filter">
+        <input placeholder="Filter branches and tags" value={filter} onInput={(e) => setFilter((e.target as HTMLInputElement).value)} />
+      </div>
+      <Section title="LOCAL" count={local.length} open={open.local} onToggle={() => toggle('local')} />
       {open.local &&
-        p.data.local.map((b) => (
+        local.map((b) => (
           <div
             key={b.name}
-            class={`item ${b.isHead ? 'strong' : ''} ${p.selectedOid === b.oid ? 'selected' : ''}`}
+            class={`item ${b.isHead ? 'strong' : ''} ${p.selectedOid === b.oid ? 'selected' : ''} ${p.solo.has(b.name) ? 'soloed' : ''}`}
             onClick={() => p.onJump(b.oid)}
             onDblClick={() => !b.isHead && p.onCheckout(b.name)}
             onContextMenu={(e) => {
               e.preventDefault()
               p.onBranchMenu(e, b.name, b.oid, b.isHead)
             }}
+            title={b.upstream ? `Upstream: ${b.upstream}${b.gone ? ' (gone)' : ''}` : 'No upstream'}
           >
             {dot(b.oid)}
             <span class="name">{b.name}</span>
+            {soloBtn(b.name)}
+            {!!(b.ahead || b.behind) && (
+              <span class="meta">
+                {b.ahead ? `↑${b.ahead}` : ''}
+                {b.behind ? ` ↓${b.behind}` : ''}
+              </span>
+            )}
+            {b.gone && <span class="meta">gone</span>}
             {b.isHead && <span class="meta" style={{ color: 'var(--green)' }}>✓</span>}
           </div>
         ))}
-      {open.local && p.data.local.length === 0 && <div class="empty">No branches yet</div>}
+      {open.local && local.length === 0 && <div class="empty">{q ? 'No matching branches' : 'No branches yet'}</div>}
 
       <Section title="REMOTE" count={p.data.remote.length} open={open.remote} onToggle={() => toggle('remote')} />
       {open.remote &&
@@ -67,7 +100,7 @@ export function LeftPanel(p: LeftProps) {
             {branches.map((b) => (
               <div
                 key={b.name}
-                class={`item indent ${p.selectedOid === b.oid ? 'selected' : ''}`}
+                class={`item indent ${p.selectedOid === b.oid ? 'selected' : ''} ${p.solo.has(b.name) ? 'soloed' : ''}`}
                 onClick={() => p.onJump(b.oid)}
                 onDblClick={() => p.onCheckoutRemote(b.name)}
                 onContextMenu={(e) => {
@@ -77,15 +110,16 @@ export function LeftPanel(p: LeftProps) {
               >
                 {dot(b.oid)}
                 <span class="name">{b.name.slice(remote.length + 1)}</span>
+                {soloBtn(b.name)}
               </div>
             ))}
           </div>
         ))}
       {open.remote && p.data.remote.length === 0 && <div class="empty">Nothing from remotes yet. Fetch to load them.</div>}
 
-      <Section title="TAGS" count={p.data.tags.length} open={open.tags} onToggle={() => toggle('tags')} />
+      <Section title="TAGS" count={tags.length} open={open.tags} onToggle={() => toggle('tags')} />
       {open.tags &&
-        p.data.tags.map((t) => (
+        tags.map((t) => (
           <div
             key={t.name}
             class={`item ${p.selectedOid === t.oid ? 'selected' : ''}`}
@@ -100,9 +134,9 @@ export function LeftPanel(p: LeftProps) {
           </div>
         ))}
 
-      <Section title="STASHES" count={p.data.stashes.length} open={open.stashes} onToggle={() => toggle('stashes')} />
+      <Section title="STASHES" count={stashes.length} open={open.stashes} onToggle={() => toggle('stashes')} />
       {open.stashes &&
-        p.data.stashes.map((s) => (
+        stashes.map((s) => (
           <div
             key={s.oid}
             class={`item ${p.selectedOid === s.oid ? 'selected' : ''}`}
