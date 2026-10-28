@@ -418,6 +418,10 @@ export async function merge(dir, branch) {
 
 const AUTOSTASH = /autostash$/
 
+async function hasUnmerged(dir) {
+  return /^(UU|AA|DD|AU|UA|DU|UD) /m.test((await run(dir, ['status', '--porcelain', '-uno'])).stdout)
+}
+
 async function autostashIndex(dir) {
   const list = (await run(dir, ['stash', 'list', '--format=%gs'], { allowFail: true })).stdout.split('\n')
   const i = list.findIndex((s) => AUTOSTASH.test(s.trim()))
@@ -431,7 +435,7 @@ export async function rebase(dir, onto) {
     if ((await stateOf(dir)) === 'rebase') return { result: 'conflicts', before }
     throw new Error((r.stderr || r.stdout).trim())
   }
-  return { result: /autostash resulted in conflicts/i.test(`${r.stdout}\n${r.stderr}`) ? 'stash-conflicts' : 'done', before }
+  return { result: (await hasUnmerged(dir)) ? 'stash-conflicts' : 'done', before }
 }
 
 export async function undoRebase(dir, before) {
@@ -439,7 +443,7 @@ export async function undoRebase(dir, before) {
   const orig = (await run(dir, ['rev-parse', '-q', '--verify', 'ORIG_HEAD'], { allowFail: true })).stdout.trim()
   const want = (await run(dir, ['rev-parse', '-q', '--verify', `${safeName(before)}^{commit}`])).stdout.trim()
   if (!/^rebase/.test(last) || orig !== want) throw new Error('The branch changed after the rebase, so it cannot be undone safely here.')
-  const unmerged = /^(UU|AA|DD|AU|UA|DU|UD) /m.test((await run(dir, ['status', '--porcelain', '-uno'])).stdout)
+  const unmerged = await hasUnmerged(dir)
   if (unmerged) await run(dir, ['reset', '-q'])
   const dirty = (await run(dir, ['status', '--porcelain', '-uno'])).stdout.trim()
   if (dirty) await run(dir, ['stash', 'push', '-q', '-m', unmerged ? 'Backup before undoing the rebase' : 'autostash'])

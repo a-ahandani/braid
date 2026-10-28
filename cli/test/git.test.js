@@ -113,6 +113,7 @@ describe('rebase with local changes', () => {
   before(() => {
     repo = mkdtempSync(join(tmpdir(), 'ramulus-rebase-'))
     g('init', '-q', '-b', 'main')
+    g('config', 'core.autocrlf', 'false')
     g('config', 'user.name', 'Test')
     g('config', 'user.email', 't@example.com')
     write('a.txt', 'one\ntwo\n')
