@@ -292,6 +292,20 @@ export async function writeWorkdir(dir, path, content, expected) {
   await writeFile(full, content)
 }
 
+const cap = (text, n = 80000) => (text.length > n ? `${text.slice(0, n)}\n[${text.length - n} more characters left out]` : text)
+
+export async function aiContext(dir, task, extra = {}) {
+  const out = async (args) => (await run(dir, args, { allowFail: true })).stdout.trim()
+  const recent = `Recent commit subjects:\n${await out(['log', '-15', '--format=%s'])}`
+  if (task === 'commit') return `${recent}\n\nStaged changes:\n${cap(`${await out(['diff', '--cached', '--stat'])}\n\n${await out(['diff', '--cached'])}`)}`
+  if (task === 'branch') {
+    const branches = (await out(['branch', '-a', '--format=%(refname:short)'])).split('\n').slice(0, 80).join('\n')
+    const at = extra.at ? `\n\nThe new branch starts at this commit:\n${await out(['log', '-1', '--format=%s%n%n%b', safeName(extra.at)])}` : ''
+    return `Existing branches:\n${branches}${at}\n\nUncommitted changes:\n${cap(`${await out(['status', '--short'])}\n\n${await out(['diff', 'HEAD'])}`)}`
+  }
+  throw new Error('Unknown task')
+}
+
 export async function findRepos(root, depth = 3, limit = 100) {
   const found = []
   let level = [root]

@@ -13,7 +13,7 @@ Run it inside any git repository, or pass a path: `npx ramulus ~/code/app`. Run 
 ## Why Ramulus
 
 - **Your git, unchanged.** Every operation runs through the git binary you already use, so SSH keys, credential helpers, hooks and LFS behave exactly as they do in the terminal.
-- **Nothing leaves your machine.** The server listens on 127.0.0.1 and every request carries a per-run token. The only outside requests are your own git remotes and avatar lookups on gravatar.com.
+- **Nothing leaves your machine unless you ask.** The server listens on 127.0.0.1 and every request carries a per-run token. The only outside requests are your own git remotes, avatar lookups on gravatar.com, and, if you turn it on, the AI agent you already use.
 - **One command.** No installer, no sign-in, no license key. Close the terminal and it is gone.
 
 Ramulus is Latin for a small branch.
@@ -46,6 +46,13 @@ Ramulus is Latin for a small branch.
 - Only the visible tab watches its folder, so hidden tabs cost nothing and catch up when you come back.
 - Light and dark themes, resizable panels, tree or flat file lists with +/− counts, and a status bar with branch, sync and change counts.
 
+### Your AI agent, if you want one
+
+- Ramulus looks for Claude Code, Codex, Gemini CLI and opencode on your PATH and asks before using any of them. Pick one if several are installed. Each uses its own sign-in, so there is no API key to add.
+- The sparkle in the commit box drafts a message from the staged changes, and the one in the new-branch dialog suggests a name. Both fill the field for you to review and edit.
+- The agent terminal (⌃\`) runs the agent's own interactive tool in a panel at the bottom, in the repository's folder, so you can chat with it as you would in your own terminal. The sparkle on a conflicted file pastes a resolve prompt into it without sending it, so you can change it first. The agent then edits the file with its own approvals, and the result shows up as an unstaged change for you to review.
+- Every prompt can be edited in AI agent settings in the command palette.
+
 ### Keyboard
 
 | Keys | Action |
@@ -60,6 +67,7 @@ Ramulus is Latin for a small branch.
 | `⌘B` | New branch from HEAD |
 | `⌘L` | Fetch every remote |
 | `⌘J` / `⌘K` | Toggle the left / right panel |
+| `` ⌃` `` | Show or hide the agent terminal |
 | `?` | All shortcuts |
 
 Use Ctrl instead of ⌘ on Windows and Linux.

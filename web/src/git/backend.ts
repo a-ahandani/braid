@@ -12,6 +12,19 @@ export interface RebaseResult {
   before: string
 }
 
+export type AiTask = 'commit' | 'branch' | 'conflict'
+
+export interface AiSettings {
+  enabled?: boolean
+  agent?: string
+  prompts: Partial<Record<AiTask, string>>
+}
+
+export interface AiInfo {
+  agents: { id: string; name: string }[]
+  settings: AiSettings
+}
+
 export interface FileVersions {
   old: string
   new: string
@@ -55,4 +68,13 @@ export interface Backend {
   continueOp?(): Promise<void>
   openPath?(path: string): Promise<void>
   subscribe?(onChange: () => void): () => void
+  ai?(): Promise<AiInfo>
+  setAi?(settings: AiSettings): Promise<void>
+  aiContext?(task: 'commit' | 'branch', at?: string): Promise<string>
+  aiAsk?(agent: string, prompt: string, signal: AbortSignal): Promise<string>
+  termStart?(agent: string, cols: number, rows: number): Promise<{ agent: string; fresh: boolean }>
+  termInput?(data: string): Promise<void>
+  termResize?(cols: number, rows: number): Promise<void>
+  termStop?(): Promise<void>
+  termStream?(onData: (data: string) => void, onExit: () => void): () => void
 }

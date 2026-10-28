@@ -3,7 +3,9 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import http from 'node:http'
 import { homedir } from 'node:os'
 import { basename, dirname, extname, join, normalize, resolve } from 'node:path'
+import * as ai from './ai.js'
 import * as git from './git.js'
+import { createTerminals } from './term.js'
 
 const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.png': 'image/png', '.json': 'application/json' }
 
@@ -98,6 +100,26 @@ export function createServer({ dir, root = dir, uiDir, token, stateFile = STATE 
   }
   if (dir) remember(dir).catch(() => {})
   const info = (repo) => ({ dir: repo, name: basename(repo) })
+  const aiFile = join(dirname(stateFile), 'ai.json')
+  const readAi = () => readFile(aiFile, 'utf8').then((t) => ai.cleanSettings(JSON.parse(t)), () => ai.cleanSettings({}))
+  const needAi = async () => {
+    if ((await readAi()).enabled !== true) throw new Error('AI help is turned off')
+  }
+  const terms = createTerminals()
+  const ops = {
+    ...OPS,
+    aiContext: (repo, b) => git.aiContext(repo, b.task, { at: b.at }),
+    termStart: async (repo, b) => (await needAi(), terms.start(repo, String(b.agent), b.cols, b.rows)),
+    termInput: (repo, b) => terms.write(repo, b.data),
+    termResize: (repo, b) => terms.resize(repo, b.cols, b.rows),
+    termStop: (repo) => terms.stop(repo),
+    aiAsk: async (repo, b, res) => {
+      await needAi()
+      const stop = new AbortController()
+      res.on('close', () => stop.abort())
+      return ai.ask(String(b.agent), String(b.prompt ?? ''), { signal: stop.signal })
+    },
+  }
   const SHELL = {
     repos: async () => ({ current: dir ? info(dir) : null, recent: (await readRecent()).filter((d) => existsSync(d)).map(info) }),
     pins: async () => (await readList(pinFile)).filter((d) => existsSync(d)).map(info),
@@ -108,6 +130,11 @@ export function createServer({ dir, root = dir, uiDir, token, stateFile = STATE 
     },
     findRepos: async () => ({ root, repos: dir || root === homedir() ? [] : (await git.findRepos(root)).map(info) }),
     pickFolder: () => git.pickFolder(),
+    ai: async () => ({ agents: ai.detect(), settings: await readAi() }),
+    setAi: async (b) => {
+      await mkdir(dirname(aiFile), { recursive: true })
+      await writeFile(aiFile, JSON.stringify(ai.cleanSettings(b.settings)))
+    },
     openRepo: async (b) => {
       const path = resolve(dir ?? root, String(b.path ?? '').trim().replace(/^~(?=$|[/\\])/, homedir()))
       if (!existsSync(path) || !statSync(path).isDirectory()) throw new Error('That folder does not exist')
@@ -145,6 +172,17 @@ export function createServer({ dir, root = dir, uiDir, token, stateFile = STATE 
       })
       return
     }
+    if (url.pathname === '/api/term') {
+      const repo = url.searchParams.get('repo') || dir
+      if (url.searchParams.get('token') !== token || !known.has(repo)) {
+        res.writeHead(401).end()
+        return
+      }
+      res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-store', connection: 'keep-alive' })
+      res.write(': connected\n\n')
+      req.on('close', terms.attach(repo, res))
+      return
+    }
     if (url.pathname.startsWith('/api/')) {
       if (req.headers['x-ramulus-token'] !== token) {
         sendJson(res, 401, { error: 'bad token' })
@@ -152,7 +190,7 @@ export function createServer({ dir, root = dir, uiDir, token, stateFile = STATE 
       }
       const name = url.pathname.slice(5)
       const shell = Object.hasOwn(SHELL, name) ? SHELL[name] : undefined
-      const op = Object.hasOwn(OPS, name) ? OPS[name] : undefined
+      const op = Object.hasOwn(ops, name) ? ops[name] : undefined
       if ((!op && !shell) || req.method !== 'POST') {
         sendJson(res, 404, { error: 'unknown operation' })
         return
@@ -161,7 +199,7 @@ export function createServer({ dir, root = dir, uiDir, token, stateFile = STATE 
         const body = await readBody(req)
         const repo = body.repo ?? dir
         if (!shell && !known.has(repo)) throw new Error('Open that repository first')
-        sendJson(res, 200, { result: (await (shell ? shell(body) : op(repo, body))) ?? null })
+        sendJson(res, 200, { result: (await (shell ? shell(body) : op(repo, body, res))) ?? null })
       } catch (e) {
         sendJson(res, 400, { error: e instanceof Error ? e.message : String(e) })
       }
@@ -176,5 +214,9 @@ export function createServer({ dir, root = dir, uiDir, token, stateFile = STATE 
     res.writeHead(200, { 'content-type': TYPES[extname(file)] ?? 'application/octet-stream', 'cache-control': 'no-cache' })
     createReadStream(file).pipe(res)
   })
+  server.stopAgents = () => {
+    terms.stopAll()
+    ai.killAll()
+  }
   return server
 }

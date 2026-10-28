@@ -1,6 +1,6 @@
 {
   "name": "ramulus",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "Every branch of your repository in one graph. Runs a local server on top of your installed git and opens the UI in your browser.",
   "license": "MIT",
   "repository": {
@@ -23,5 +23,8 @@
     "build": "cd ../web && npm run build && rm -rf ../cli/ui && cp -R dist ../cli/ui",
     "prepack": "npm run build",
     "test": "node --test test/*.test.js"
+  },
+  "dependencies": {
+    "@lydell/node-pty": "^1.1.0"
   }
 }

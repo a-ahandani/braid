@@ -1,20 +1,21 @@
-export function Splitter({ onDrag }: { onDrag: (dx: number) => void }) {
+export function Splitter({ onDrag, horizontal }: { onDrag: (delta: number) => void; horizontal?: boolean }) {
   return (
     <div
-      class="splitter"
+      class={`splitter ${horizontal ? 'horizontal' : ''}`}
       onPointerDown={(e) => {
         e.preventDefault()
-        let last = e.clientX
+        const at = (ev: PointerEvent) => (horizontal ? ev.clientY : ev.clientX)
+        let last = at(e)
         const move = (ev: PointerEvent) => {
-          onDrag(ev.clientX - last)
-          last = ev.clientX
+          onDrag(at(ev) - last)
+          last = at(ev)
         }
         const up = () => {
           window.removeEventListener('pointermove', move)
           window.removeEventListener('pointerup', up)
           document.body.style.cursor = ''
         }
-        document.body.style.cursor = 'col-resize'
+        document.body.style.cursor = horizontal ? 'row-resize' : 'col-resize'
         window.addEventListener('pointermove', move)
         window.addEventListener('pointerup', up)
       }}

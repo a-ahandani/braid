@@ -13,6 +13,7 @@ export const SHORTCUTS: [string, string][] = [
   ['↑ ↓  or  K J', 'Move through commits'],
   [`${MOD} J`, 'Toggle the left panel'],
   [`${MOD} K`, 'Toggle the detail panel'],
+  [MOD === '⌘' ? '⌃ `' : 'Ctrl `', 'Show or hide the agent terminal'],
   ['?', 'This list'],
   ['Esc', 'Close dialogs, clear the search'],
 ]

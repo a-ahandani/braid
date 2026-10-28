@@ -1,11 +1,12 @@
 import type { Backend } from './backend'
 import type { RefLabel, RepoData } from './repo'
 
-async function post<T>(base: string, token: string, op: string, body: object): Promise<T> {
+async function post<T>(base: string, token: string, op: string, body: object, signal?: AbortSignal): Promise<T> {
   const res = await fetch(`${base}/api/${op}`, {
     method: 'POST',
     headers: { 'content-type': 'application/json', 'x-ramulus-token': token },
     body: JSON.stringify(body),
+    signal,
   })
   const data = await res.json().catch(() => ({ error: `${res.status} ${res.statusText}` }))
   if (!res.ok || data.error) throw new Error(data.error ?? 'Request failed')
@@ -29,7 +30,7 @@ export function helperShell(base: string, token: string) {
 }
 
 export function httpBackend(base: string, token: string, repo?: string): Backend {
-  const call = <T>(op: string, body: object = {}): Promise<T> => post<T>(base, token, op, { ...body, repo })
+  const call = <T>(op: string, body: object = {}, signal?: AbortSignal): Promise<T> => post<T>(base, token, op, { ...body, repo }, signal)
   return {
     native: true,
     load: async (limit) => {
@@ -69,6 +70,23 @@ export function httpBackend(base: string, token: string, repo?: string): Backend
     revert: (oid) => call('revert', { oid }),
     abort: () => call('abort'),
     continueOp: () => call('continue'),
+    ai: () => call('ai'),
+    setAi: (settings) => call('setAi', { settings }),
+    aiContext: (task, at) => call('aiContext', { task, at }),
+    aiAsk: (agent, prompt, signal) => call('aiAsk', { agent, prompt }, signal),
+    termStart: (agent, cols, rows) => call('termStart', { agent, cols, rows }),
+    termInput: (data) => call('termInput', { data }),
+    termResize: (cols, rows) => call('termResize', { cols, rows }),
+    termStop: () => call('termStop'),
+    termStream: (onData, onExit) => {
+      const es = new EventSource(`${base}/api/term?token=${token}${repo ? `&repo=${encodeURIComponent(repo)}` : ''}`)
+      es.onmessage = (e) => onData(JSON.parse(e.data))
+      es.addEventListener('exit', () => {
+        es.close()
+        onExit()
+      })
+      return () => es.close()
+    },
     subscribe: (onChange) => {
       const es = new EventSource(`${base}/api/events?token=${token}${repo ? `&repo=${encodeURIComponent(repo)}` : ''}`)
       es.onmessage = () => onChange()

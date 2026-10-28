@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'preact/hooks'
-import type { Backend, PullMode, PushResult, RebaseResult } from '../git/backend'
+import { DEFAULT_PROMPTS, branchName, fillPrompt, splitMessage } from '../git/ai'
+import type { AiInfo, AiSettings, Backend, PullMode, PushResult, RebaseResult } from '../git/backend'
 import { layout, type RowLayout } from '../git/graph'
 import { PAGE, type Commit, type DiffArea, type FileChange, type NetSettings, type RepoData } from '../git/repo'
+import { AgentTerminal, AiConsent, AiSettingsDialog } from './Ai'
 import { Icon, laneColor, short } from './bits'
 import { DetailPanel, type FileSel } from './DetailPanel'
 import { DiffWindow, tabKey, type DiffOptions, type DiffTab } from './DiffWindow'
@@ -111,6 +113,17 @@ export function App(p: { be: Backend; active: boolean; theme: Theme; onTheme: (t
   const [updatedAt, setUpdatedAt] = useState<Date>()
   const [settings, setSettings] = useState<NetSettings>(loadSettings)
   const [pullMode, setPullMode] = useState<PullMode>('merge')
+  const [aiInfo, setAiInfo] = useState<AiInfo>()
+  const [aiDialog, setAiDialog] = useState<'consent' | 'settings'>()
+  const [drafting, setDrafting] = useState<'commit' | 'branch'>()
+  const draftStop = useRef<AbortController | undefined>(undefined)
+  const [drawer, setDrawer] = useState<{ agent: string }>()
+  const [drawerShown, setDrawerShown] = useState(false)
+  const [drawerH, setDrawerH] = useState(() => Number(stored('ramulus.drawer')) || 280)
+  const [paste, setPaste] = useState<{ id: number; text: string }>()
+  const [restart, setRestart] = useState(0)
+  const [termState, setTermState] = useState<{ running: boolean; agent?: string }>({ running: false })
+  const consent = useRef<((agent?: string) => void) | undefined>(undefined)
   const overlayRef = useRef(false)
   const filterRef = useRef<HTMLInputElement>(null)
   const openPalette = (on: boolean) => {
@@ -122,6 +135,9 @@ export function App(p: { be: Backend; active: boolean; theme: Theme; onTheme: (t
   const busyRef = useRef(busy)
   busyRef.current = busy
 
+  useEffect(() => {
+    localStorage.setItem('ramulus.drawer', String(drawerH))
+  }, [drawerH])
   useEffect(() => {
     localStorage.setItem('ramulus.left', String(widths.left))
     localStorage.setItem('ramulus.right', String(widths.right))
@@ -137,6 +153,9 @@ export function App(p: { be: Backend; active: boolean; theme: Theme; onTheme: (t
   }
 
   const fail = (title: string, e: unknown) => setDialog({ kind: 'error', title, message: e instanceof Error ? e.message : String(e) })
+  useEffect(() => {
+    p.be.ai?.().then(setAiInfo, () => {})
+  }, [p.be])
 
   const applyData = useCallback((be: Backend, data: RepoData, limit: number, fresh: boolean) => {
     const v = buildView(be, data, limit)
@@ -333,6 +352,104 @@ export function App(p: { be: Backend; active: boolean; theme: Theme; onTheme: (t
 
   const head = view?.data.headBranch
   const confirm = (message: string, action: () => void) => setDialog({ kind: 'confirm', message, action })
+
+  const aiReady = !!p.be.aiAsk && !!aiInfo?.agents.length && aiInfo.settings.enabled !== false
+
+  const pickAgent = async (): Promise<{ agent: string; settings: AiSettings } | undefined> => {
+    const info = await p.be.ai!()
+    setAiInfo(info)
+    const s = info.settings
+    if (s.enabled && s.agent && info.agents.some((a) => a.id === s.agent)) return { agent: s.agent, settings: s }
+    if (s.enabled === false || info.agents.length === 0) return undefined
+    const agent = await new Promise<string | undefined>((resolve) => {
+      consent.current = resolve
+      setAiDialog('consent')
+    })
+    return agent ? { agent, settings: { ...s, enabled: true, agent } } : undefined
+  }
+
+  const answerConsent = async (choice?: string | false) => {
+    setAiDialog(undefined)
+    const done = consent.current
+    consent.current = undefined
+    if (choice !== undefined && aiInfo) {
+      const settings: AiSettings = { ...aiInfo.settings, enabled: choice !== false, ...(choice ? { agent: choice } : {}) }
+      try {
+        await p.be.setAi!(settings)
+        setAiInfo({ ...aiInfo, settings })
+      } catch (e) {
+        setToast(`Could not save the AI setting: ${e instanceof Error ? e.message : String(e)}`)
+        return done?.(undefined)
+      }
+    }
+    done?.(choice || undefined)
+  }
+
+  const agentName = (id?: string) => aiInfo?.agents.find((a) => a.id === id)?.name ?? id ?? ''
+  const say = (e: unknown) => setToast(e instanceof Error ? e.message : String(e))
+
+  const aiDraft = async (task: 'commit' | 'branch', at?: string) => {
+    if (draftStop.current) return draftStop.current.abort()
+    const picked = await pickAgent().catch((e) => void say(e))
+    if (!picked) return
+    const stop = new AbortController()
+    draftStop.current = stop
+    setDrafting(task)
+    try {
+      const context = await p.be.aiContext!(task, at)
+      const reply = await p.be.aiAsk!(picked.agent, `${picked.settings.prompts[task] || DEFAULT_PROMPTS[task]}\n\n${context}`, stop.signal)
+      if (task === 'commit') {
+        const m = splitMessage(reply)
+        setSummary(m.summary)
+        setDescription(m.description)
+        setToast(`${agentName(picked.agent)} drafted the message. Review it, then commit.`)
+      } else setDialog((d) => (d?.kind === 'branch' ? { ...d, name: branchName(reply) } : d))
+    } catch (e) {
+      if (!stop.signal.aborted) say(e)
+    } finally {
+      draftStop.current = undefined
+      setDrafting(undefined)
+    }
+  }
+
+  const openAgent = async (conflictFile?: string) => {
+    const picked = await pickAgent().catch((e) => void say(e))
+    if (!picked) return
+    setDrawer((d) => d ?? { agent: picked.agent })
+    setDrawerShown(true)
+    if (conflictFile) setPaste({ id: Date.now(), text: fillPrompt(picked.settings.prompts.conflict || DEFAULT_PROMPTS.conflict, conflictFile) })
+  }
+
+  const stopAgent = () => {
+    p.be.termStop?.().catch(() => {})
+    setPaste(undefined)
+    setDrawer(undefined)
+    setDrawerShown(false)
+  }
+  useEffect(() => () => void p.be.termStop?.().catch(() => {}), [])
+
+  const closeDialog = () => {
+    if (drafting === 'branch') draftStop.current?.abort()
+    setDialog(undefined)
+  }
+
+  const openAiSettings = () =>
+    p.be.ai!().then(
+      (i) => (setAiInfo(i), setAiDialog('settings')),
+      (e) => fail('Could not read the AI settings', e),
+    )
+
+  const aiCommands = (): Command[] => {
+    if (!p.be.ai) return []
+    const list: Command[] = [{ id: 'ai-settings', group: 'AI', label: 'AI agent settings', run: openAiSettings }]
+    if (!aiReady || !p.be.termStart) return list
+    list.push({ id: 'ai-term', group: 'AI', label: drawerShown ? 'Hide the agent terminal' : 'Show the agent terminal', hint: '⌃`', run: () => (drawerShown ? setDrawerShown(false) : openAgent()) })
+    if (drawer) list.push({ id: 'ai-stop', group: 'AI', label: 'Stop the agent', run: stopAgent })
+    if (view?.data.status.staged.length) list.push({ id: 'ai-commit', group: 'AI', label: 'Draft a commit message with your AI agent', run: () => aiDraft('commit') })
+    for (const f of view?.data.status.unstaged.filter((x) => x.conflict) ?? []) list.push({ id: `ai-fix:${f.path}`, group: 'AI', label: `Fix the conflict in ${f.path} with your AI agent`, run: () => openAgent(f.path) })
+    return list
+  }
+
   const conflictToast = (r: unknown) => r === 'conflicts' && setToast('There are conflicts to resolve')
 
   const doCommit = () => {
@@ -628,6 +745,7 @@ export function App(p: { be: Backend; active: boolean; theme: Theme; onTheme: (t
       { id: 'pullall', group: 'Action', label: 'Pull every open repository (fast-forward only)', run: () => p.onAll('pull') },
       { id: 'fetchall', group: 'Action', label: 'Fetch every open repository', run: () => p.onAll('fetch') },
     ]
+    list.push(...aiCommands())
     if (solo.size) list.push({ id: 'unsolo', group: 'View', label: 'Show all branches', run: () => setSolo(new Set()) })
     list.push({ id: 'open', group: 'Action', label: 'Open repository…', run: p.onOpenRepo })
     for (const b of v.data.local) {
@@ -638,12 +756,18 @@ export function App(p: { be: Backend; active: boolean; theme: Theme; onTheme: (t
     for (const b of v.data.remote) list.push({ id: `swr:${b.name}`, group: 'Remote', label: `Switch to ${b.name}`, run: () => run('Switching branch', () => v.be.checkoutRemote(b.name)) })
     for (const t of v.data.tags) list.push({ id: `tag:${t.name}`, group: 'Tag', label: `Jump to ${t.name}`, run: () => jump(t.oid) })
     return list
-  }, [view, head, pullMode, theme, tree, solo])
+  }, [view, head, pullMode, theme, tree, solo, aiInfo, aiReady, drawer, drawerShown])
 
   useEffect(() => {
     if (!p.active) return
     const onKey = (e: KeyboardEvent) => {
-      if (e.target instanceof Element && e.target.closest('.diff-window')) return
+      if (e.ctrlKey && e.key === '`' && aiReady && p.be.termStart) {
+        e.preventDefault()
+        if (drawer && drawerShown) setDrawerShown(false)
+        else openAgent()
+        return
+      }
+      if (e.target instanceof Element && e.target.closest('.diff-window, .agent-drawer')) return
       const mod = e.metaKey || e.ctrlKey
       const typing = e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || (e.target instanceof HTMLElement && e.target.isContentEditable)
       if (mod && (e.key === 'p' || e.key === 'P')) {
@@ -676,7 +800,7 @@ export function App(p: { be: Backend; active: boolean; theme: Theme; onTheme: (t
       } else if (e.key === 'Escape') {
         if (palette) openPalette(false)
         else if (shortcuts) setShortcuts(false)
-        else if (dialog) setDialog(undefined)
+        else if (dialog && !aiDialog) closeDialog()
         else if (filter) setFilter('')
         else if (solo.size) setSolo(new Set())
       } else if (!typing && !dialog && !palette && !overlayRef.current) {
@@ -736,6 +860,12 @@ export function App(p: { be: Backend; active: boolean; theme: Theme; onTheme: (t
           </>
         )}
         <span class="spacer" />
+        {aiReady && p.be.termStart && (
+          <button class={drawerShown ? 'on' : ''} onClick={() => (drawerShown ? setDrawerShown(false) : openAgent())} title="Agent terminal (⌃`)">
+            <Icon name="terminal" />
+            Agent
+          </button>
+        )}
         {updatedAt && <span title="Last read of the repository">Updated {updatedAt.toLocaleTimeString()}</span>}
         {v && (
           <button onClick={() => openPalette(true)} title="Command palette (⌘⇧P)">
@@ -773,7 +903,7 @@ export function App(p: { be: Backend; active: boolean; theme: Theme; onTheme: (t
   const net = (label: string, fn: () => Promise<unknown>) => run(label, fn, { after: () => setToast(`${label} done`) })
 
   return (
-    <div class="app">
+    <div class={`app ${drawer && drawerShown ? 'with-drawer' : ''}`}>
       <div class="toolbar">
         <div class="tb-side">
           <span class="repo">{v.data.name}</span>
@@ -912,8 +1042,38 @@ export function App(p: { be: Backend; active: boolean; theme: Theme; onTheme: (t
           onAbort={v.be.abort ? () => run('Aborting', () => v.be.abort!(), { after: () => setUndo(undefined) }) : undefined}
           onDropAutostash={v.be.dropAutostash ? () => run('Dropping the saved copy', () => v.be.dropAutostash!()) : undefined}
           onContinue={v.be.continueOp ? () => run('Continuing', () => v.be.continueOp!()) : undefined}
+          onAiCommit={aiReady ? () => aiDraft('commit') : undefined}
+          aiDrafting={drafting === 'commit'}
+          onAiFix={aiReady && p.be.termStart ? (path) => openAgent(path) : undefined}
         />
       </div>
+      {drawer && drawerShown && p.active && (
+        <div class="agent-drawer" style={{ height: `${drawerH}px` }}>
+          <Splitter horizontal onDrag={(dy) => setDrawerH((h) => clamp(h - dy, 120, innerHeight - 200))} />
+          <div class="drawer-head">
+            <Icon name="terminal" />
+            <span class="title">Agent</span>
+            <span class="agent">
+              {agentName(termState.agent ?? drawer.agent)}
+              {termState.running ? '' : ' (stopped)'}
+            </span>
+            <span class="spacer" />
+            <button class="icon" title="Restart the agent" aria-label="Restart the agent" onClick={() => setRestart((n) => n + 1)}>
+              <Icon name="debug-restart" />
+            </button>
+            <button class="icon" title="AI agent settings" aria-label="AI agent settings" onClick={openAiSettings}>
+              <Icon name="settings-gear" />
+            </button>
+            <button class="icon" title="Hide the panel (⌃`)" aria-label="Hide the panel" onClick={() => setDrawerShown(false)}>
+              <Icon name="chevron-down" />
+            </button>
+            <button class="icon" title="Stop the agent and close the panel" aria-label="Stop the agent and close the panel" onClick={stopAgent}>
+              <Icon name="trash" />
+            </button>
+          </div>
+          <AgentTerminal be={p.be} agent={drawer.agent} dark={theme === 'dark'} paste={paste} restart={restart} onState={setTermState} onPasted={() => setPaste(undefined)} />
+        </div>
+      )}
       {statusBar(v)}
       {menu && <Menu menu={menu} onClose={() => setMenu(undefined)} />}
       {palette && <Palette commands={commands} onClose={() => openPalette(false)} />}
@@ -941,7 +1101,7 @@ export function App(p: { be: Backend; active: boolean; theme: Theme; onTheme: (t
           dialog={dialog}
           settings={settings}
           native={v.be.native}
-          onClose={() => setDialog(undefined)}
+          onClose={closeDialog}
           onCreateBranch={(name, at, checkout) => run('Creating branch', () => v.be.createBranch(name, at, checkout))}
           onCreateTag={(name, at, message) => run('Creating tag', () => v.be.createTag(name, at, message))}
           onRename={(old, name) => run('Renaming branch', () => v.be.renameBranch(old, name))}
@@ -951,6 +1111,24 @@ export function App(p: { be: Backend; active: boolean; theme: Theme; onTheme: (t
             setSettings(s)
             saveSettings(s)
           }}
+          onSuggestBranch={aiReady ? (at) => aiDraft('branch', at) : undefined}
+          suggesting={drafting === 'branch'}
+        />
+      )}
+      {aiDialog === 'consent' && aiInfo && <AiConsent agents={aiInfo.agents} onAnswer={answerConsent} />}
+      {aiDialog === 'settings' && aiInfo && (
+        <AiSettingsDialog
+          info={aiInfo}
+          onClose={() => setAiDialog(undefined)}
+          onSave={(settings) =>
+            p.be
+              .setAi!(settings)
+              .then(() => {
+                setAiInfo({ ...aiInfo, settings })
+                if (settings.agent) setDrawer((d) => d && { agent: settings.agent! })
+              })
+              .catch((e) => fail('Could not save the AI settings', e))
+          }
         />
       )}
       {undo && v.data.status.state !== 'rebase' && (

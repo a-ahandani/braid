@@ -36,6 +36,9 @@ export interface DetailProps {
   onAbort?: () => void
   onDropAutostash?: () => void
   onContinue?: () => void
+  onAiCommit?: () => void
+  aiDrafting?: boolean
+  onAiFix?: (path: string) => void
 }
 
 function kindColor(k: FileChange['kind']): string {
@@ -242,7 +245,20 @@ export function DetailPanel(p: DetailProps) {
       )}
       <div class="commit-box">
         {!p.data.headBranch && p.data.headOid && <div class="warn">Not on a branch (detached HEAD)</div>}
-        <div class="label">Message</div>
+        <div class="label">
+          Message
+          {p.onAiCommit && (
+            <button
+              class={`icon ${p.aiDrafting ? 'spin' : ''}`}
+              disabled={s.staged.length === 0 && !p.aiDrafting}
+              title={p.aiDrafting ? 'Drafting. Click to stop' : s.staged.length ? 'Draft the message with your AI agent' : 'Stage something first'}
+              aria-label={p.aiDrafting ? 'Stop drafting' : 'Draft the message with your AI agent'}
+              onClick={p.onAiCommit}
+            >
+              <Icon name={p.aiDrafting ? 'loading' : 'sparkle'} />
+            </button>
+          )}
+        </div>
         <input placeholder="Summary" value={p.summary} onInput={(e) => p.onSummary((e.target as HTMLInputElement).value)} />
         <textarea placeholder="Description" value={p.description} onInput={(e) => p.onDescription((e.target as HTMLTextAreaElement).value)} />
         {p.summary.length > 72 && <div class="warn">Keep the summary under 72 characters so other tools show it in full.</div>}
@@ -300,6 +316,11 @@ export function DetailPanel(p: DetailProps) {
           onMenu={(e, f) => p.onFileMenu(e, f, { kind: 'unstaged' })}
           actions={(f) => (
             <>
+              {f.conflict && p.onAiFix && (
+                <button title="Fix the conflict with your AI agent" aria-label={`Fix the conflict in ${f.path} with your AI agent`} onClick={(e) => (e.stopPropagation(), p.onAiFix!(f.path))}>
+                  <Icon name="sparkle" />
+                </button>
+              )}
               <button title="Discard changes" onClick={(e) => (e.stopPropagation(), p.onDiscard([f]))}>
                 <Icon name="discard" />
               </button>

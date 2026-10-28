@@ -34,6 +34,12 @@ if (!existsSync(join(uiDir, 'index.html'))) {
 
 const token = randomBytes(16).toString('hex')
 const server = createServer({ dir, root, uiDir, token })
+for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP']) {
+  process.on(signal, () => {
+    server.stopAgents()
+    process.exit(0)
+  })
+}
 server.listen(port, '127.0.0.1', () => {
   const url = `http://127.0.0.1:${server.address().port}/#${token}`
   console.log(`${dir ? `Ramulus is serving ${dir}` : `${root} is not a git repository. Pick repositories in the browser.`}\n${url}\nPress Ctrl+C to stop.`)

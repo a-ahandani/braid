@@ -2,9 +2,10 @@ import type { ComponentChildren } from 'preact'
 import { useEffect, useRef, useState } from 'preact/hooks'
 import type { ResetMode } from '../git/backend'
 import type { NetSettings } from '../git/repo'
+import { Icon } from './bits'
 
 export type Dialog =
-  | { kind: 'branch'; at: string }
+  | { kind: 'branch'; at: string; name?: string }
   | { kind: 'tag'; at: string }
   | { kind: 'rename'; old: string }
   | { kind: 'stash' }
@@ -26,15 +27,17 @@ export interface DialogProps {
   onStash: (message: string) => void
   onReset: (at: string, mode: ResetMode) => void
   onSettings: (s: NetSettings) => void
+  onSuggestBranch?: (at: string) => void
+  suggesting?: boolean
 }
 
 function validRef(name: string): boolean {
   return name.length > 0 && !name.startsWith('-') && !/[\s~^:?*[\\]|\.\.|@\{|\/$|\.$|^\/|\/\/|\.lock$/.test(name) && name !== '@'
 }
 
-function Frame({ title, children, onClose }: { title: string; children: ComponentChildren; onClose: () => void }) {
+export function Frame({ title, children, onClose, cls = '' }: { title: string; children: ComponentChildren; onClose: () => void; cls?: string }) {
   return (
-    <div class="overlay" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+    <div class={`overlay ${cls}`} onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
       <div class="dialog" onKeyDown={(e) => e.key === 'Escape' && onClose()}>
         <h3>{title}</h3>
         {children}
@@ -43,7 +46,7 @@ function Frame({ title, children, onClose }: { title: string; children: Componen
   )
 }
 
-function Buttons({ ok, danger, enabled, onOk, onClose }: { ok: string; danger?: boolean; enabled: boolean; onOk: () => void; onClose: () => void }) {
+export function Buttons({ ok, danger, enabled, onOk, onClose }: { ok: string; danger?: boolean; enabled: boolean; onOk: () => void; onClose: () => void }) {
   return (
     <div class="buttons">
       <button onClick={onClose}>Cancel</button>
@@ -63,6 +66,10 @@ export function Dialogs(p: DialogProps) {
   const [net, setNet] = useState(p.settings)
   const first = useRef<HTMLInputElement>(null)
   useEffect(() => first.current?.focus(), [])
+  const suggested = d.kind === 'branch' ? d.name : undefined
+  useEffect(() => {
+    if (suggested) setName(suggested)
+  }, [suggested])
   const submit = (enabled: boolean, fn: () => void) => (e: KeyboardEvent) => {
     if (e.key === 'Enter' && enabled && !(e.target instanceof HTMLTextAreaElement)) {
       e.preventDefault()
@@ -76,7 +83,19 @@ export function Dialogs(p: DialogProps) {
       const go = () => p.onCreateBranch(name, d.at, checkout)
       return (
         <Frame title="Name the new branch" onClose={p.onClose}>
-          <input ref={first} placeholder="branch name" value={name} onInput={(e) => setName((e.target as HTMLInputElement).value)} onKeyDown={submit(ok, go)} />
+          <div class="input-row">
+            <input ref={first} placeholder="branch name" value={name} onInput={(e) => setName((e.target as HTMLInputElement).value)} onKeyDown={submit(ok, go)} />
+            {p.onSuggestBranch && (
+              <button
+                class={`icon ${p.suggesting ? 'spin' : ''}`}
+                title={p.suggesting ? 'Suggesting. Click to stop' : 'Suggest a name with your AI agent'}
+                aria-label={p.suggesting ? 'Stop suggesting' : 'Suggest a name with your AI agent'}
+                onClick={() => p.onSuggestBranch!(d.at)}
+              >
+                <Icon name={p.suggesting ? 'loading' : 'sparkle'} />
+              </button>
+            )}
+          </div>
           <label>
             <input type="checkbox" checked={checkout} onChange={(e) => setCheckout((e.target as HTMLInputElement).checked)} /> Switch to it right away
           </label>
