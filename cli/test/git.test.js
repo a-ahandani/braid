@@ -14,6 +14,7 @@ before(() => {
   sh('init', '-q', '-b', 'main')
   sh('config', 'user.name', 'Test')
   sh('config', 'user.email', 't@example.com')
+  sh('config', 'core.autocrlf', 'false')
 })
 
 after(() => rmSync(dir, { recursive: true, force: true }))
