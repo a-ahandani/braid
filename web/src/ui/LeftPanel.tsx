@@ -55,7 +55,7 @@ export function LeftPanel(p: LeftProps) {
     const r = b.name.split('/')[0]
     byRemote.set(r, [...(byRemote.get(r) ?? []), b])
   }
-  const local = p.data.local.filter((b) => show(b.name))
+  const local = p.data.local.filter((b) => show(b.name)).sort((a, b) => Number(b.isHead) - Number(a.isHead))
   const tags = p.data.tags.filter((t) => show(t.name))
   const stashes = p.data.stashes.filter((s) => show(s.message))
   return (
@@ -64,93 +64,105 @@ export function LeftPanel(p: LeftProps) {
         <input placeholder="Filter branches and tags" value={filter} onInput={(e) => setFilter((e.target as HTMLInputElement).value)} />
       </div>
       <Section title="LOCAL" count={local.length} open={open.local} onToggle={() => toggle('local')} />
-      {open.local &&
-        local.map((b) => (
-          <div
-            key={b.name}
-            class={`item ${b.isHead ? 'strong' : ''} ${p.selectedOid === b.oid ? 'selected' : ''} ${p.solo.has(b.name) ? 'soloed' : ''}`}
-            onClick={() => p.onJump(b.oid)}
-            onDblClick={() => !b.isHead && p.onCheckout(b.name)}
-            onContextMenu={(e) => {
-              e.preventDefault()
-              p.onBranchMenu(e, b.name, b.oid, b.isHead)
-            }}
-            title={b.upstream ? `Upstream: ${b.upstream}${b.gone ? ' (gone)' : ''}` : 'No upstream'}
-          >
-            {dot(b.oid)}
-            <span class="name">{b.name}</span>
-            {soloBtn(b.name)}
-            {!!(b.ahead || b.behind) && (
-              <span class="meta">
-                {b.ahead ? <><Icon name="arrow-small-up" />{b.ahead}</> : null}
-                {b.behind ? <><Icon name="arrow-small-down" />{b.behind}</> : null}
-              </span>
-            )}
-            {b.gone && <span class="meta">gone</span>}
-            {b.isHead && <span class="meta" style={{ color: 'var(--green)' }}><Icon name="check" /></span>}
-          </div>
-        ))}
-      {open.local && local.length === 0 && <div class="empty">{q ? 'No matching branches' : 'No branches yet'}</div>}
+      {open.local && (
+        <div class="sec-body">
+          {local.map((b) => (
+            <div
+              key={b.name}
+              class={`item ${b.isHead ? 'strong' : ''} ${p.selectedOid === b.oid ? 'selected' : ''} ${p.solo.has(b.name) ? 'soloed' : ''}`}
+              onClick={() => p.onJump(b.oid)}
+              onDblClick={() => !b.isHead && p.onCheckout(b.name)}
+              onContextMenu={(e) => {
+                e.preventDefault()
+                p.onBranchMenu(e, b.name, b.oid, b.isHead)
+              }}
+              title={b.upstream ? `Upstream: ${b.upstream}${b.gone ? ' (gone)' : ''}` : 'No upstream'}
+            >
+              {dot(b.oid)}
+              <span class="name">{b.name}</span>
+              {soloBtn(b.name)}
+              {!!(b.ahead || b.behind) && (
+                <span class="meta">
+                  {b.ahead ? <><Icon name="arrow-small-up" />{b.ahead}</> : null}
+                  {b.behind ? <><Icon name="arrow-small-down" />{b.behind}</> : null}
+                </span>
+              )}
+              {b.gone && <span class="meta">gone</span>}
+              {b.isHead && <span class="meta here">checked out</span>}
+            </div>
+          ))}
+          {local.length === 0 && <div class="empty">{q ? 'No matching branches' : 'No branches yet'}</div>}
+        </div>
+      )}
 
       <Section title="REMOTE" count={p.data.remote.length} open={open.remote} onToggle={() => toggle('remote')} />
-      {open.remote &&
-        [...byRemote].map(([remote, branches]) => (
-          <div key={remote}>
-            <div class="remote-name">{remote}</div>
-            {branches.map((b) => (
-              <div
-                key={b.name}
-                class={`item indent ${p.selectedOid === b.oid ? 'selected' : ''} ${p.solo.has(b.name) ? 'soloed' : ''}`}
-                onClick={() => p.onJump(b.oid)}
-                onDblClick={() => p.onCheckoutRemote(b.name)}
-                onContextMenu={(e) => {
-                  e.preventDefault()
-                  p.onRemoteMenu(e, b.name)
-                }}
-              >
-                {dot(b.oid)}
-                <span class="name">{b.name.slice(remote.length + 1)}</span>
-                {soloBtn(b.name)}
-              </div>
-            ))}
-          </div>
-        ))}
-      {open.remote && p.data.remote.length === 0 && <div class="empty">Nothing from remotes yet. Fetch to load them.</div>}
+      {open.remote && (
+        <div class="sec-body">
+          {[...byRemote].map(([remote, branches]) => (
+            <div key={remote}>
+              <div class="remote-name">{remote}</div>
+              {branches.map((b) => (
+                <div
+                  key={b.name}
+                  class={`item indent ${p.selectedOid === b.oid ? 'selected' : ''} ${p.solo.has(b.name) ? 'soloed' : ''}`}
+                  onClick={() => p.onJump(b.oid)}
+                  onDblClick={() => p.onCheckoutRemote(b.name)}
+                  onContextMenu={(e) => {
+                    e.preventDefault()
+                    p.onRemoteMenu(e, b.name)
+                  }}
+                >
+                  {dot(b.oid)}
+                  <span class="name">{b.name.slice(remote.length + 1)}</span>
+                  {soloBtn(b.name)}
+                </div>
+              ))}
+            </div>
+          ))}
+          {p.data.remote.length === 0 && <div class="empty">Nothing from remotes yet. Fetch to load them.</div>}
+        </div>
+      )}
 
       <Section title="TAGS" count={tags.length} open={open.tags} onToggle={() => toggle('tags')} />
-      {open.tags &&
-        tags.map((t) => (
-          <div
-            key={t.name}
-            class={`item ${p.selectedOid === t.oid ? 'selected' : ''}`}
-            onClick={() => p.onJump(t.oid)}
-            onContextMenu={(e) => {
-              e.preventDefault()
-              p.onTagMenu(e, t.name, t.oid)
-            }}
-          >
-            {dot(t.oid)}
-            <span class="name">{t.name}</span>
-          </div>
-        ))}
+      {open.tags && (
+        <div class="sec-body">
+          {tags.map((t) => (
+            <div
+              key={t.name}
+              class={`item ${p.selectedOid === t.oid ? 'selected' : ''}`}
+              onClick={() => p.onJump(t.oid)}
+              onContextMenu={(e) => {
+                e.preventDefault()
+                p.onTagMenu(e, t.name, t.oid)
+              }}
+            >
+              {dot(t.oid)}
+              <span class="name">{t.name}</span>
+            </div>
+          ))}
+        </div>
+      )}
 
       <Section title="STASHES" count={stashes.length} open={open.stashes} onToggle={() => toggle('stashes')} />
-      {open.stashes &&
-        stashes.map((s) => (
-          <div
-            key={s.oid}
-            class={`item ${p.selectedOid === s.oid ? 'selected' : ''}`}
-            title={s.message}
-            onClick={() => p.onJump(s.oid)}
-            onContextMenu={(e) => {
-              e.preventDefault()
-              p.onStashMenu(e, s.index, s.message)
-            }}
-          >
-            {dot(s.oid)}
-            <span class="name">{s.message}</span>
-          </div>
-        ))}
+      {open.stashes && (
+        <div class="sec-body">
+          {stashes.map((s) => (
+            <div
+              key={s.oid}
+              class={`item ${p.selectedOid === s.oid ? 'selected' : ''}`}
+              title={s.message}
+              onClick={() => p.onJump(s.oid)}
+              onContextMenu={(e) => {
+                e.preventDefault()
+                p.onStashMenu(e, s.index, s.message)
+              }}
+            >
+              {dot(s.oid)}
+              <span class="name">{s.message}</span>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   )
 }

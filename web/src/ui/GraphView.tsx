@@ -1,5 +1,5 @@
 import type { JSX } from 'preact'
-import { useEffect, useRef, useState } from 'preact/hooks'
+import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks'
 import type { RowLayout } from '../git/graph'
 import type { BranchInfo, Commit, RefLabel } from '../git/repo'
 import { ago, Avatar, fmtDate, Icon, laneColor, Laptop, short } from './bits'
@@ -152,8 +152,8 @@ function Lanes({ lay, kind, author, email, drawEdges }: { lay: RowLayout; kind: 
   )
 }
 
-export function Pill({ pill, color, onDoubleClick, onPointerDown }: { pill: PillData; color: string; onDoubleClick?: () => void; onPointerDown?: (e: PointerEvent) => void }) {
-  const bg = pill.current ? `color-mix(in srgb, ${color} 45%, transparent)` : `color-mix(in srgb, ${color} 25%, transparent)`
+export function Pill({ pill, color, lifted, onDoubleClick, onPointerDown }: { pill: PillData; color: string; lifted?: boolean; onDoubleClick?: () => void; onPointerDown?: (e: PointerEvent) => void }) {
+  const bg = pill.current ? `color-mix(in srgb, ${color} 55%, var(--bg))` : `color-mix(in srgb, ${color} 25%, transparent)`
   const parts: string[] = []
   if (pill.local) parts.push(pill.current ? 'Checked out' : 'Local branch. Double-click to switch, drag onto a commit to merge or rebase.')
   if (pill.remote) parts.push(`Remote: ${pill.remote.name}`)
@@ -162,14 +162,14 @@ export function Pill({ pill, color, onDoubleClick, onPointerDown }: { pill: Pill
   const draggable = !!(pill.local || pill.remote)
   return (
     <span
-      class={`pill ${pill.current ? 'current' : ''}`}
-      style={{ background: bg, color, outline: pill.current ? `1px solid ${color}` : undefined }}
+      class={`pill ${pill.current ? 'current' : ''} ${lifted ? 'lifted' : ''}`}
+      style={{ background: bg, color: pill.current ? 'var(--fg-bright)' : color, boxShadow: pill.current ? `inset 0 0 0 1px ${color}` : undefined }}
       title={`${pill.name}\n${parts.join('\n')}`}
       onDblClick={onDoubleClick}
       data-draggable={draggable ? '1' : undefined}
       onPointerDown={(e) => draggable && e.button === 0 && onPointerDown?.(e)}
     >
-      {pill.local && <Laptop />}
+      {pill.local && (pill.current ? <Icon name="check" /> : <Laptop />)}
       {pill.remote && <Icon name="cloud" />}
       {pill.tag && <Icon name="tag" />}
       {pill.name}
@@ -190,35 +190,105 @@ export function GraphView(p: GraphProps) {
   const [width, setWidth] = useState(1000)
   const [dropRow, setDropRow] = useState<number>()
   const dragging = useRef<PillData | undefined>(undefined)
-  const startDrag = (pill: PillData, e: PointerEvent) => {
+  const [drag, setDrag] = useState<{ pill: PillData; idx: number; color: string; hint: string; ok: boolean }>()
+  const ghost = useRef<HTMLDivElement>(null)
+  const ghostAt = useRef('')
+  const startDrag = (pill: PillData, from: number, color: string, e: PointerEvent) => {
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
+    const ox = e.clientX - rect.left
+    const oy = e.clientY - rect.top
     const sx = e.clientX
     const sy = e.clientY
     let active = false
     let over: number | undefined
+    let shown = ''
+    let last = { x: sx, y: sy }
+    let raf = 0
+    const place = () => {
+      ghostAt.current = `translate(${last.x - ox}px, ${last.y - oy}px)`
+      if (ghost.current) ghost.current.style.transform = ghostAt.current
+    }
+    const aim = () => {
+      const row = document.elementFromPoint(last.x, last.y)?.closest<HTMLElement>('.row[data-idx]')
+      const idx = row ? Number(row.dataset.idx) : undefined
+      const c = idx === undefined ? undefined : p.rows[idx]
+      const src = pill.local?.name ?? pill.remote?.name ?? pill.name
+      const targetHead = c && (p.refsByOid.get(c.id) ?? []).find((l) => l.kind === 'head' && l.current)
+      let hint = 'Drop it on a commit'
+      let next: number | undefined
+      if (idx === from) hint = 'It is already here'
+      else if (c && c.kind !== 'wip') {
+        if (targetHead && targetHead.name !== src) hint = `Merge ${src} into ${targetHead.name}`
+        else if (pill.current) hint = `Rebase or reset ${src} onto ${short(c.id)}`
+        else hint = 'Switch to it first, or drop it on the checked-out branch'
+        next = targetHead && targetHead.name !== src ? idx : pill.current ? idx : undefined
+      }
+      if (`${next}:${hint}` === shown) return
+      shown = `${next}:${hint}`
+      over = next
+      setDropRow(over)
+      setDrag({ pill, idx: from, color, hint, ok: over !== undefined })
+      document.body.style.cursor = over !== undefined ? 'grabbing' : 'no-drop'
+    }
+    const scroll = () => {
+      const el = box.current
+      if (el) {
+        const r = el.getBoundingClientRect()
+        const dir = last.y < r.top + 36 ? -1 : last.y > r.bottom - 36 ? 1 : 0
+        if (dir) {
+          el.scrollTop += dir * 14
+          aim()
+        }
+      }
+      raf = requestAnimationFrame(scroll)
+    }
     const move = (ev: PointerEvent) => {
+      last = { x: ev.clientX, y: ev.clientY }
       if (!active && Math.hypot(ev.clientX - sx, ev.clientY - sy) < 5) return
       if (!active) {
         active = true
+        document.body.classList.add('dragging')
         dragging.current = pill
-        document.body.style.cursor = 'grabbing'
+        place()
+        raf = requestAnimationFrame(scroll)
       }
-      const row = document.elementFromPoint(ev.clientX, ev.clientY)?.closest<HTMLElement>('.row[data-idx]')
-      const idx = row ? Number(row.dataset.idx) : undefined
-      const c = idx === undefined ? undefined : p.rows[idx]
-      over = c && c.kind !== 'wip' ? idx : undefined
-      setDropRow(over)
+      place()
+      aim()
     }
-    const up = (ev: PointerEvent) => {
+    const finish = (drop: boolean) => {
       window.removeEventListener('pointermove', move)
       window.removeEventListener('pointerup', up)
+      window.removeEventListener('keydown', key, true)
+      window.removeEventListener('pointercancel', cancel)
+      window.removeEventListener('blur', cancel)
+      cancelAnimationFrame(raf)
       document.body.style.cursor = ''
+      document.body.classList.remove('dragging')
       setDropRow(undefined)
-      if (active && over !== undefined) p.onDrop({ source: pill, rowIndex: over, x: ev.clientX, y: ev.clientY })
-      dragging.current = undefined
+      setDrag(undefined)
+      if (drop && active && over !== undefined) p.onDrop({ source: pill, rowIndex: over, x: last.x, y: last.y })
+      setTimeout(() => (dragging.current = undefined))
     }
+    const up = (ev: PointerEvent) => {
+      last = { x: ev.clientX, y: ev.clientY }
+      finish(true)
+    }
+    const key = (ev: KeyboardEvent) => {
+      if (ev.key !== 'Escape' || !active) return
+      ev.preventDefault()
+      ev.stopPropagation()
+      finish(false)
+    }
+    const cancel = () => finish(false)
     window.addEventListener('pointermove', move)
     window.addEventListener('pointerup', up)
+    window.addEventListener('keydown', key, true)
+    window.addEventListener('pointercancel', cancel)
+    window.addEventListener('blur', cancel)
   }
+  useLayoutEffect(() => {
+    if (ghost.current) ghost.current.style.transform = ghostAt.current
+  }, [drag])
   useEffect(() => {
     const el = box.current
     if (!el) return
@@ -264,7 +334,7 @@ export function GraphView(p: GraphProps) {
     items.push(
       <div
         key={c.id}
-        class={`row ${idx === p.selectedIndex ? 'selected' : ''} ${dropRow === idx ? 'drop' : ''}`}
+        class={`row ${idx === p.selectedIndex ? 'selected' : ''} ${dropRow === idx ? 'drop' : ''} ${pills.some((x) => x.current) ? 'head' : ''}`}
         style={{ top: `${top}px`, '--cols': cols }}
         data-idx={idx}
         onClick={() => !dragging.current && p.onSelect(idx)}
@@ -280,8 +350,9 @@ export function GraphView(p: GraphProps) {
               key={pill.key}
               pill={pill}
               color={color}
+              lifted={drag?.idx === idx && drag.pill.key === pill.key}
               onDoubleClick={() => p.onPillDoubleClick(pill)}
-              onPointerDown={(e) => startDrag(pill, e)}
+              onPointerDown={(e) => startDrag(pill, idx, color, e)}
             />
           ))}
         </div>
@@ -320,6 +391,14 @@ export function GraphView(p: GraphProps) {
         <div style={{ height: `${count * ROW_H}px`, position: 'relative' }}>{items}</div>
         {p.rows.length === 0 && <div class="placeholder">No commits yet</div>}
       </div>
+      {drag && (
+        <div class="drag-ghost" ref={ghost} aria-hidden="true">
+          <span class="ghost-pill">
+            <Pill pill={drag.pill} color={drag.color} />
+          </span>
+          <span class={`drag-hint ${drag.ok ? 'ok' : ''}`}>{drag.hint}</span>
+        </div>
+      )}
     </div>
   )
 }

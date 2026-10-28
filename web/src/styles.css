@@ -359,11 +359,30 @@ select {
 .toolbar .branch {
   display: inline-flex;
   align-items: center;
-  gap: 3px;
+  gap: 4px;
   min-width: 0;
+  height: 24px;
+  padding: 0 6px 0 8px;
+  margin: 0 8px 0 4px;
+  border-radius: 12px;
+  border: 1px solid color-mix(in srgb, var(--focus) 50%, transparent);
+  background: color-mix(in srgb, var(--focus) 16%, transparent);
+  color: var(--fg);
+  font-weight: 600;
+}
+
+.toolbar .branch:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--focus) 28%, transparent);
+}
+
+.toolbar .branch.detached {
+  border-color: var(--yellow);
+  background: color-mix(in srgb, var(--yellow) 16%, transparent);
+}
+
+.toolbar .branch .name {
   overflow: hidden;
-  color: var(--fg-2);
-  margin-right: 8px;
+  text-overflow: ellipsis;
 }
 
 .toolbar .search {
@@ -455,6 +474,11 @@ select {
   border-top: 1px solid var(--line);
 }
 
+.sec-body {
+  max-height: 35vh;
+  overflow-y: auto;
+}
+
 .section:first-of-type {
   border-top: 0;
 }
@@ -505,8 +529,18 @@ select {
   text-overflow: ellipsis;
 }
 
+.item.strong:not(.selected) {
+  background: color-mix(in srgb, var(--focus) 14%, transparent);
+  box-shadow: inset 2px 0 0 var(--focus);
+}
+
 .item.strong .name {
   font-weight: 600;
+  color: var(--fg-bright);
+}
+
+.item .meta.here {
+  color: var(--focus);
 }
 
 .item .meta {
@@ -660,7 +694,51 @@ select {
 }
 
 .pill.current {
+  font-weight: 700;
+}
+
+.pill.lifted {
+  opacity: 0.35;
+}
+
+.row.head .msg {
   font-weight: 600;
+  color: var(--fg-bright);
+}
+
+.drag-ghost {
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  pointer-events: none;
+}
+
+.ghost-pill {
+  display: inline-flex;
+  border-radius: 3px;
+  background: var(--bg);
+  box-shadow: 0 6px 18px var(--shadow);
+  transform: rotate(-2deg) scale(1.06);
+}
+
+.drag-hint {
+  padding: 2px 6px;
+  border-radius: 4px;
+  border: 1px solid var(--line);
+  background: var(--widget);
+  color: var(--fg-2);
+  font-size: 11px;
+  box-shadow: 0 2px 8px var(--shadow);
+}
+
+.drag-hint.ok {
+  border-color: var(--focus);
+  color: var(--fg);
 }
 
 .pill[data-draggable] {
@@ -1028,7 +1106,7 @@ a {
 
 .menu button:hover {
   background: var(--menu-sel);
-  color: #ffffff;
+  color: var(--btn-fg);
 }
 
 .menu button .check {
@@ -1042,7 +1120,7 @@ a {
 }
 
 .menu button.danger:hover {
-  color: #ffffff;
+  color: var(--btn-fg);
 }
 
 .menu .sep {

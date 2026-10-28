@@ -59,7 +59,7 @@ function DiffPane(p: {
   stamp: unknown
   active: boolean
   options: DiffOptions
-  dark: boolean
+  look: string
   actions: ChunkAction[]
   onDirty: (dirty: boolean) => void
   onSave: (text: string, base: string, done: () => void) => void
@@ -107,7 +107,7 @@ function DiffPane(p: {
           newText={versions.new}
           filename={sel.path}
           mode={p.options.mode}
-          dark={p.dark}
+          look={p.look}
           wrap={p.options.wrap}
           collapse={p.options.collapse}
           editable={sel.area.kind === 'unstaged' && !mixed}
@@ -131,7 +131,7 @@ export function DiffWindow(p: {
   be: Backend
   stamp: unknown
   options: DiffOptions
-  dark: boolean
+  look: string
   actionsFor: (sel: FileSel) => ChunkAction[]
   onActivate: (key: string) => void
   onCloseTab: (key: string) => void
@@ -312,7 +312,7 @@ export function DiffWindow(p: {
           stamp={p.stamp}
           active={t.key === current.key}
           options={p.options}
-          dark={p.dark}
+          look={p.look}
           actions={p.actionsFor(t.sel)}
           onDirty={(d) => p.onDirty(t.key, d)}
           onSave={(text, base, done) => p.onSave(t.sel, text, base, done)}

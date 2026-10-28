@@ -17,7 +17,7 @@ export interface DiffEditorProps {
   newText: string
   filename: string
   mode: DiffMode
-  dark: boolean
+  look: string
   wrap: boolean
   collapse: boolean
   editable: boolean
@@ -39,12 +39,11 @@ interface Control {
   change: LineChange
 }
 
-const theme = (dark: boolean) => (dark ? 'ramulus-dark' : 'ramulus-light')
 
 export function DiffEditor(p: DiffEditorProps) {
   const host = useRef<HTMLDivElement>(null)
   const [controls, setControls] = useState<Control[]>([])
-  const diffRef = useRef<{ diff: editor.IStandaloneDiffEditor; setTheme: (t: string) => void } | undefined>(undefined)
+  const diffRef = useRef<{ diff: editor.IStandaloneDiffEditor; setLook: (look: string) => void } | undefined>(undefined)
   const base = useRef({ version: 0, applying: false })
   const latest = useRef(p)
   latest.current = p
@@ -54,14 +53,14 @@ export function DiffEditor(p: DiffEditorProps) {
     if (!parent) return
     let gone = false
     let dispose = () => {}
-    import('./monaco').then(({ monaco, languageFor }) => {
+    import('./monaco').then(({ monaco, languageFor, themeFor }) => {
       if (gone) return
       const o = latest.current
       const lang = languageFor(o.filename)
       const original = monaco.editor.createModel(o.oldText, lang)
       const modified = monaco.editor.createModel(o.newText, lang)
       const diff = monaco.editor.createDiffEditor(parent, {
-        theme: theme(o.dark),
+        theme: themeFor(o.look),
         automaticLayout: true,
         renderSideBySide: o.mode === 'split',
         useInlineViewWhenSpaceIsLimited: false,
@@ -103,7 +102,7 @@ export function DiffEditor(p: DiffEditorProps) {
         mod.onDidLayoutChange(measure),
         mod.addAction({ id: 'ramulus.save', label: 'Save', keybindings: [monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS], run: () => latest.current.onSave() }),
       ]
-      diffRef.current = { diff, setTheme: monaco.editor.setTheme }
+      diffRef.current = { diff, setLook: (look) => monaco.editor.setTheme(themeFor(look)) }
       latest.current.handle?.({
         next: () => diff.goToDiff('next'),
         prev: () => diff.goToDiff('previous'),
@@ -143,8 +142,8 @@ export function DiffEditor(p: DiffEditorProps) {
     const d = diffRef.current
     if (!d) return
     d.diff.updateOptions({ renderSideBySide: p.mode === 'split', diffWordWrap: p.wrap ? 'on' : 'off', hideUnchangedRegions: { enabled: p.collapse } })
-    d.setTheme(theme(p.dark))
-  }, [p.mode, p.wrap, p.collapse, p.dark])
+    d.setLook(p.look)
+  }, [p.mode, p.wrap, p.collapse, p.look])
 
   const runAction = (a: ChunkAction, change: LineChange) => {
     const model = diffRef.current?.diff.getModel()

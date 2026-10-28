@@ -53,6 +53,13 @@ describe('helper server', () => {
   })
 
 
+  it('keeps preferences across runs', async () => {
+    assert.deepEqual((await call('prefs')).result, {})
+    await call('setPrefs', { prefs: { theme: 'light', scheme: { id: 'x' } } })
+    assert.deepEqual((await call('prefs')).result, { theme: 'light', scheme: { id: 'x' } })
+    assert.match((await call('setPrefs', { prefs: { big: 'x'.repeat(30000) } })).error, /too large/)
+  })
+
   it('only touches repositories the user opened', async () => {
     assert.equal((await call('status', {}, 'b'.repeat(32))).error, 'bad token')
     assert.deepEqual((await call('status')).result.unstaged, [])

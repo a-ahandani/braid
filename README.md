@@ -24,7 +24,8 @@ Ramulus is Latin for a small branch.
 
 - A lane graph with merge, stash and work-in-progress nodes, author avatars, and one label per branch with ahead and behind counts against its upstream.
 - Search commits by message, author, hash or ref. Solo one or two branches to see only their history.
-- Drag a branch label onto a commit to merge or rebase. Right-click any commit, branch, tag or stash for checkout, new branch, tag, cherry-pick, revert, reset, rename and delete.
+- The checked-out branch is a solid label with a check mark, sits first in the branch list, and is a chip in the toolbar that switches branches.
+- Drag a branch label onto a commit to merge or rebase. A lifted copy follows the pointer and says what the drop will do, the graph scrolls at its edges, and Esc cancels. Right-click any commit, branch, tag or stash for checkout, new branch, tag, cherry-pick, revert, reset, rename and delete.
 - Fetch, pull (merge, fast-forward only or rebase) and push. When a merge or rebase stops on conflicts, a banner offers Continue and Abort.
 
 ### Diffs and staging
@@ -44,7 +45,8 @@ Ramulus is Latin for a small branch.
 - Pull all (fast-forward only) and Fetch all update every open repository at once.
 - Rebase with uncommitted changes: they are stashed and put back for you, and the rebase can be undone afterwards. A rejected push offers rebase, merge or a safe force push instead of an error.
 - Only the visible tab watches its folder, so hidden tabs cost nothing and catch up when you come back.
-- Light and dark themes, resizable panels, tree or flat file lists with +/− counts, and a status bar with branch, sync and change counts.
+- Light and dark themes, or any color scheme from [terminalcolors.com](https://terminalcolors.com/): paste the link of its page and the whole app, the diff and the agent terminal take its colors.
+- Resizable panels, tree or flat file lists with +/− counts, and a status bar with branch, sync and change counts.
 
 ### Your AI agent, if you want one
 

@@ -1,10 +1,11 @@
 import { get, set } from 'idb-keyval'
-import { useEffect, useRef, useState } from 'preact/hooks'
+import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks'
 import { FsaFs } from '../fs/fsa'
 import type { Backend } from '../git/backend'
 import { demoRepo } from '../git/demo'
 import { helperShell, httpBackend, type RepoInfo } from '../git/remote'
 import { localBackend } from '../git/repo'
+import { isScheme, schemeVars, type Scheme } from '../git/scheme'
 import { App, loadSettings, type TabApi, type Theme } from './App'
 import { Icon } from './bits'
 import { Dialogs, type Dialog } from './Dialogs'
@@ -44,6 +45,15 @@ function initialTheme(): Theme {
   return saved === 'light' || saved === 'dark' ? saved : matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark'
 }
 
+function initialScheme(): Scheme | undefined {
+  try {
+    const saved = JSON.parse(localStorage.getItem('ramulus.scheme') ?? 'null')
+    return isScheme(saved) ? saved : undefined
+  } catch {
+    return undefined
+  }
+}
+
 const fallbackAuthor = () => {
   const s = loadSettings()
   return s.authorName && s.authorEmail ? { name: s.authorName, email: s.authorEmail } : undefined
@@ -55,6 +65,9 @@ export function Shell() {
   const [tabs, setTabs] = useState<Tab[]>([])
   const [active, setActive] = useState<number>()
   const [theme, setTheme] = useState<Theme>(initialTheme)
+  const [scheme, setScheme] = useState<Scheme | undefined>(initialScheme)
+  const applied = useRef<string[]>([])
+  const prefsReady = useRef(!helper)
   const [picker, setPicker] = useState(false)
   const [recentRepos, setRecentRepos] = useState<RepoInfo[]>([])
   const [found, setFound] = useState<RepoInfo[]>([])
@@ -75,10 +88,30 @@ export function Shell() {
   tabsRef.current = tabs
   const current = tabs.find((t) => t.id === active)
 
+  useLayoutEffect(() => {
+    const root = document.documentElement
+    root.dataset.theme = scheme ? (scheme.dark ? 'dark' : 'light') : theme
+    for (const k of applied.current) root.style.removeProperty(k)
+    const vars = scheme ? schemeVars(scheme) : {}
+    for (const [k, v] of Object.entries(vars)) root.style.setProperty(k, v)
+    applied.current = Object.keys(vars)
+    try {
+      localStorage.setItem('ramulus.theme', theme)
+      if (scheme) localStorage.setItem('ramulus.scheme', JSON.stringify(scheme))
+      else localStorage.removeItem('ramulus.scheme')
+    } catch {}
+    if (prefsReady.current) helper?.setPrefs({ theme, scheme: scheme ?? null }).catch(() => {})
+  }, [theme, scheme])
   useEffect(() => {
-    document.documentElement.dataset.theme = theme
-    localStorage.setItem('ramulus.theme', theme)
-  }, [theme])
+    helper
+      ?.prefs()
+      .then((prefs) => {
+        if (prefs.theme === 'dark' || prefs.theme === 'light') setTheme(prefs.theme)
+        setScheme(isScheme(prefs.scheme) ? prefs.scheme : undefined)
+      })
+      .catch(() => {})
+      .finally(() => (prefsReady.current = true))
+  }, [])
   useEffect(() => {
     document.title = current ? `${current.name} · Ramulus` : 'Ramulus'
   }, [current])
@@ -276,7 +309,10 @@ export function Shell() {
         ...handles.map((h, i) => ({ id: `h${i}`, group: 'Recent', label: h.name, run: () => openHandle(h).catch((e) => fail('Could not open the folder', e)) })),
       ]
   const typedPath = (q: string): Command[] => (helper && looksLikePath.test(q.trim()) ? [{ id: 'path', group: 'Open', label: q.trim(), hint: 'Open this path', run: () => openPath(q.trim()) }] : [])
-  const toggleTheme = () => setTheme(theme === 'dark' ? 'light' : 'dark')
+  const toggleTheme = () => {
+    setScheme(undefined)
+    setTheme(theme === 'dark' ? 'light' : 'dark')
+  }
 
   const recentList: SideRecent[] = helper
     ? [...found, ...recentRepos]
@@ -321,6 +357,8 @@ export function Shell() {
               active={t.id === active}
               theme={theme}
               onTheme={setTheme}
+              scheme={scheme}
+              onScheme={setScheme}
               onOpenRepo={() => setPicker(true)}
               onDirty={(d) => markDirty(t.id, d)}
               onApi={(api) => apis.current.set(t.id, api)}

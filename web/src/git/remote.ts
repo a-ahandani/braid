@@ -24,6 +24,8 @@ export function helperShell(base: string, token: string) {
     findRepos: () => post<{ root: string; repos: RepoInfo[] }>(base, token, 'findRepos', {}),
     pins: () => post<RepoInfo[]>(base, token, 'pins', {}),
     setPins: (dirs: string[]) => post<void>(base, token, 'setPins', { dirs }),
+    prefs: () => post<Record<string, unknown>>(base, token, 'prefs', {}),
+    setPrefs: (prefs: Record<string, unknown>) => post<void>(base, token, 'setPrefs', { prefs }),
     openRepo: (path: string) => post<RepoInfo>(base, token, 'openRepo', { path }),
     pickFolder: () => post<string | null>(base, token, 'pickFolder', {}),
   }

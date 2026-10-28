@@ -2,6 +2,7 @@ import type { ComponentChildren } from 'preact'
 import { useEffect, useRef, useState } from 'preact/hooks'
 import type { ResetMode } from '../git/backend'
 import type { NetSettings } from '../git/repo'
+import { loadScheme, type Scheme } from '../git/scheme'
 import { Icon } from './bits'
 
 export type Dialog =
@@ -15,6 +16,7 @@ export type Dialog =
   | { kind: 'settings' }
   | { kind: 'push-rejected'; branch: string; ahead: number; behind: number; rebase: () => void; merge: () => void; force: () => void }
   | { kind: 'repos'; folder: string; repos: { dir: string; name: string }[]; open: (dirs: string[]) => void }
+  | { kind: 'scheme' }
 
 export interface DialogProps {
   dialog: Dialog
@@ -29,6 +31,7 @@ export interface DialogProps {
   onSettings: (s: NetSettings) => void
   onSuggestBranch?: (at: string) => void
   suggesting?: boolean
+  onScheme?: (scheme: Scheme) => void
 }
 
 function validRef(name: string): boolean {
@@ -64,8 +67,17 @@ export function Dialogs(p: DialogProps) {
   const [checkout, setCheckout] = useState(true)
   const [picked, setPicked] = useState<Set<string>>(() => new Set(d.kind === 'repos' ? d.repos.map((r) => r.dir) : []))
   const [net, setNet] = useState(p.settings)
+  const [query, setQuery] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
   const first = useRef<HTMLInputElement>(null)
-  useEffect(() => first.current?.focus(), [])
+  const alive = useRef(true)
+  useEffect(() => {
+    first.current?.focus()
+    return () => {
+      alive.current = false
+    }
+  }, [])
   const suggested = d.kind === 'branch' ? d.name : undefined
   useEffect(() => {
     if (suggested) setName(suggested)
@@ -156,17 +168,52 @@ export function Dialogs(p: DialogProps) {
         </Frame>
       )
     case 'repos': {
-      const n = picked.size
+      const q = query.trim().toLowerCase()
+      const shown = d.repos.filter((r) => !q || r.name.toLowerCase().includes(q) || r.dir.slice(d.folder.length).toLowerCase().includes(q))
+      const chosen = (q ? shown : d.repos).filter((r) => picked.has(r.dir))
+      const n = chosen.length
+      const go = () => n > 0 && (d.open(chosen.map((r) => r.dir)), p.onClose())
+      const setAll = (on: boolean) =>
+        setPicked((s) => {
+          const next = new Set(s)
+          for (const r of shown) {
+            if (on) next.add(r.dir)
+            else next.delete(r.dir)
+          }
+          return next
+        })
       return (
         <Frame title="Open the repositories in this folder?" onClose={p.onClose}>
           <div>
-            <code>{d.folder}</code> is not a git repository. It has {d.repos.length === 1 ? 'one repository' : `${d.repos.length} repositories`} inside, and each one you pick opens in its own tab.
+            <code>{d.folder}</code> is not a git repository. It has {d.repos.length === 1 ? 'one repository' : `${d.repos.length} repositories`} inside, and each one you pick opens in the sidebar.
           </div>
+          {d.repos.length > 1 && (
+            <div class="input-row">
+              <input
+                ref={first}
+                placeholder="Filter repositories"
+                aria-label="Filter repositories"
+                value={query}
+                onInput={(e) => setQuery((e.target as HTMLInputElement).value)}
+                onKeyDown={(e) => {
+                  if (e.key !== 'Enter') return
+                  e.preventDefault()
+                  go()
+                }}
+              />
+              <button onClick={() => setAll(true)} disabled={shown.every((r) => picked.has(r.dir))}>
+                Select all
+              </button>
+              <button onClick={() => setAll(false)} disabled={!shown.some((r) => picked.has(r.dir))}>
+                Select none
+              </button>
+            </div>
+          )}
           <div class="repo-list">
-            {d.repos.map((r, i) => (
+            {shown.map((r, i) => (
               <label key={r.dir} title={r.dir}>
                 <input
-                  ref={i === 0 ? first : undefined}
+                  ref={i === 0 && d.repos.length === 1 ? first : undefined}
                   type="checkbox"
                   checked={picked.has(r.dir)}
                   onChange={() =>
@@ -182,8 +229,54 @@ export function Dialogs(p: DialogProps) {
                 <span class="path">{r.dir.slice(d.folder.length).replace(/^[/\\]/, '')}</span>
               </label>
             ))}
+            {shown.length === 0 && <div class="hint">No repository matches “{query.trim()}”</div>}
           </div>
-          <Buttons ok={n === 1 ? 'Open 1 repository' : `Open ${n} repositories`} enabled={n > 0} onOk={() => (d.open(d.repos.filter((r) => picked.has(r.dir)).map((r) => r.dir)), p.onClose())} onClose={p.onClose} />
+          <div class="hint">
+            {n} of {q ? `${shown.length} shown` : d.repos.length} selected
+          </div>
+          <Buttons ok={n === 1 ? 'Open 1 repository' : `Open ${n} repositories`} enabled={n > 0} onOk={go} onClose={p.onClose} />
+        </Frame>
+      )
+    }
+    case 'scheme': {
+      const go = async () => {
+        if (!name.trim() || busy) return
+        setBusy(true)
+        setError('')
+        try {
+          const scheme = await loadScheme(name)
+          if (!alive.current) return
+          p.onScheme!(scheme)
+          p.onClose()
+        } catch (e) {
+          if (alive.current) setError(e instanceof Error ? e.message : String(e))
+        } finally {
+          if (alive.current) setBusy(false)
+        }
+      }
+      return (
+        <Frame title="Use a color scheme" onClose={p.onClose}>
+          <div>
+            Pick a theme on{' '}
+            <a href="https://terminalcolors.com/" target="_blank" rel="noreferrer">
+              terminalcolors.com
+            </a>{' '}
+            and paste the link of its page here. The whole app, the diff and the agent terminal take its colors.
+          </div>
+          <input
+            ref={first}
+            placeholder="https://terminalcolors.com/themes/catppuccin/mocha/"
+            aria-label="Theme link"
+            value={name}
+            onInput={(e) => setName((e.target as HTMLInputElement).value)}
+            onKeyDown={(e) => {
+              if (e.key !== 'Enter') return
+              e.preventDefault()
+              go()
+            }}
+          />
+          {error && <div class="error">{error}</div>}
+          <Buttons ok={busy ? 'Loading…' : 'Use it'} enabled={!!name.trim() && !busy} onOk={go} onClose={p.onClose} />
         </Frame>
       )
     }
@@ -194,15 +287,15 @@ export function Dialogs(p: DialogProps) {
           <div>
             {d.branch} on the remote has {n(d.behind)} you don't have yet, and you have {n(d.ahead)} it doesn't. A normal push would drop theirs, so git refused it.
           </div>
-          <button class="choice" onClick={() => (d.rebase(), p.onClose())}>
+          <button class="choice" onClick={() => (p.onClose(), d.rebase())}>
             <b>Rebase onto theirs, then push</b>
             <span>Puts your {n(d.ahead)} on top of theirs. Keeps history straight. Recommended.</span>
           </button>
-          <button class="choice" onClick={() => (d.merge(), p.onClose())}>
+          <button class="choice" onClick={() => (p.onClose(), d.merge())}>
             <b>Merge theirs, then push</b>
             <span>Adds a merge commit that joins both sides.</span>
           </button>
-          <button class="choice danger" onClick={() => (d.force(), p.onClose())}>
+          <button class="choice danger" onClick={() => (p.onClose(), d.force())}>
             <b>Force push</b>
             <span>Replaces the remote branch with yours and drops their {n(d.behind)}. Stops if the remote changes again first.</span>
           </button>

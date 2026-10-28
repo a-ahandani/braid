@@ -91,6 +91,7 @@ export function createServer({ dir, root = dir, uiDir, token, stateFile = STATE 
   const known = new Set(dir ? [dir] : [])
   const watchers = new Map()
   const pinFile = join(dirname(stateFile), 'pinned.json')
+  const prefsFile = join(dirname(stateFile), 'prefs.json')
   const readList = (file) => readFile(file, 'utf8').then((t) => [JSON.parse(t)].flat().filter((d) => typeof d === 'string'), () => [])
   const readRecent = () => readList(stateFile)
   const remember = async (repo) => {
@@ -127,6 +128,13 @@ export function createServer({ dir, root = dir, uiDir, token, stateFile = STATE 
       const dirs = [b.dirs].flat().filter((d) => typeof d === 'string').slice(0, 50)
       await mkdir(dirname(pinFile), { recursive: true })
       await writeFile(pinFile, JSON.stringify(dirs))
+    },
+    prefs: () => readFile(prefsFile, 'utf8').then(JSON.parse, () => ({})),
+    setPrefs: async (b) => {
+      const text = JSON.stringify(b.prefs && typeof b.prefs === 'object' ? b.prefs : {})
+      if (text.length > 20000) throw new Error('Preferences are too large')
+      await mkdir(dirname(prefsFile), { recursive: true })
+      await writeFile(prefsFile, text)
     },
     findRepos: async () => ({ root, repos: dir || root === homedir() ? [] : (await git.findRepos(root)).map(info) }),
     pickFolder: () => git.pickFolder(),

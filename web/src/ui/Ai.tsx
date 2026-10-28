@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'preact/hooks'
 import { DEFAULT_PROMPTS } from '../git/ai'
 import type { AiInfo, AiSettings, AiTask, Backend } from '../git/backend'
+import { COLORS } from '../git/scheme'
 import { Buttons, Frame } from './Dialogs'
 
 const PROMPT_LABELS: Record<AiTask, string> = {
@@ -85,11 +86,12 @@ export function AiSettingsDialog(p: { info: AiInfo; onSave: (s: AiSettings) => v
 }
 
 const cssVar = (name: string) => getComputedStyle(document.documentElement).getPropertyValue(name).trim()
+const ANSI = [...COLORS, ...COLORS.map((c) => `bright${c[0].toUpperCase()}${c.slice(1)}`)]
 
 export function AgentTerminal(p: {
   be: Backend
   agent: string
-  dark: boolean
+  look: string
   paste?: { id: number; text: string }
   restart: number
   onState: (s: { running: boolean; agent?: string }) => void
@@ -107,7 +109,10 @@ export function AgentTerminal(p: {
     Promise.all([import('@xterm/xterm'), import('@xterm/addon-fit'), import('@xterm/xterm/css/xterm.css')]).then(([{ Terminal }, { FitAddon }]) => {
       const el = host.current
       if (gone || !el) return
-      const theme = () => ({ background: cssVar('--bg'), foreground: cssVar('--fg'), cursor: cssVar('--fg'), selectionBackground: cssVar('--selected') })
+      const theme = () => {
+        const ansi = ANSI.map((name, i) => [name, cssVar(`--ansi-${i}`) || undefined])
+        return { background: cssVar('--bg'), foreground: cssVar('--fg'), cursor: cssVar('--fg'), selectionBackground: cssVar('--selected'), ...Object.fromEntries(ansi) }
+      }
       const xt = new Terminal({ fontFamily: cssVar('--mono') || 'monospace', fontSize: 12, cursorBlink: true, theme: theme() })
       const fit = new FitAddon()
       xt.loadAddon(fit)
@@ -192,7 +197,7 @@ export function AgentTerminal(p: {
 
   useEffect(() => {
     term.current?.setTheme()
-  }, [p.dark])
+  }, [p.look])
 
   useEffect(() => {
     if (p.restart) term.current?.restart()

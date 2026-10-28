@@ -73,6 +73,55 @@ monaco.editor.defineTheme('ramulus-light', {
   },
 })
 
+export function themeFor(look: string): string {
+  if (look === 'dark' || look === 'light') return `ramulus-${look}`
+  const css = getComputedStyle(document.documentElement)
+  const v = (name: string) => css.getPropertyValue(name).trim()
+  const a = Array.from({ length: 16 }, (_, i) => v(`--ansi-${i}`).slice(1))
+  monaco.editor.defineTheme('ramulus-scheme', {
+    base: document.documentElement.dataset.theme === 'light' ? 'vs' : 'vs-dark',
+    inherit: true,
+    rules: [
+      { token: '', foreground: v('--fg').slice(1) },
+      { token: 'identifier', foreground: v('--fg').slice(1) },
+      { token: 'delimiter', foreground: v('--fg-2').slice(1) },
+      { token: 'comment', foreground: a[8], fontStyle: 'italic' },
+      { token: 'string', foreground: a[2] },
+      { token: 'keyword', foreground: a[5] },
+      { token: 'number', foreground: a[3] },
+      { token: 'regexp', foreground: a[1] },
+      { token: 'type', foreground: a[6] },
+      { token: 'type.identifier', foreground: a[6] },
+      { token: 'tag', foreground: a[4] },
+      { token: 'attribute.name', foreground: a[3] },
+      { token: 'attribute.value', foreground: a[2] },
+      { token: 'constant', foreground: a[11] },
+    ],
+    colors: {
+      'editor.background': v('--bg'),
+      'editor.foreground': v('--fg'),
+      'editorGutter.background': v('--bg'),
+      'editorLineNumber.foreground': v('--fg-3'),
+      'editorLineNumber.activeForeground': v('--fg'),
+      'editorIndentGuide.background1': v('--line'),
+      'editorWidget.background': v('--widget'),
+      'editorWidget.border': v('--line'),
+      'editorCursor.foreground': v('--focus'),
+      'editor.selectionBackground': v('--selected'),
+      'diffEditor.unchangedRegionBackground': v('--side'),
+      'diffEditor.insertedLineBackground': v('--diff-ins-line'),
+      'diffEditor.insertedTextBackground': v('--diff-ins-text'),
+      'diffEditor.removedLineBackground': v('--diff-del-line'),
+      'diffEditor.removedTextBackground': v('--diff-del-text'),
+      'focusBorder': v('--focus'),
+      'input.background': v('--input'),
+      'input.border': v('--input-border'),
+      'widget.border': v('--line'),
+    },
+  })
+  return 'ramulus-scheme'
+}
+
 export function languageFor(path: string): string {
   const name = path.slice(path.lastIndexOf('/') + 1).toLowerCase()
   const hit = monaco.languages.getLanguages().find((l) => l.filenames?.some((f) => f.toLowerCase() === name) || l.extensions?.some((e) => name.endsWith(e.toLowerCase())))

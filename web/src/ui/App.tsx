@@ -3,6 +3,7 @@ import { DEFAULT_PROMPTS, branchName, fillPrompt, splitMessage } from '../git/ai
 import type { AiInfo, AiSettings, Backend, PullMode, PushResult, RebaseResult } from '../git/backend'
 import { layout, type RowLayout } from '../git/graph'
 import { PAGE, type Commit, type DiffArea, type FileChange, type NetSettings, type RepoData } from '../git/repo'
+import type { Scheme } from '../git/scheme'
 import { AgentTerminal, AiConsent, AiSettingsDialog } from './Ai'
 import { Icon, laneColor, short } from './bits'
 import { DetailPanel, type FileSel } from './DetailPanel'
@@ -78,9 +79,25 @@ export interface TabApi {
   fetch: () => Promise<void>
 }
 
-export function App(p: { be: Backend; active: boolean; theme: Theme; onTheme: (t: Theme) => void; onOpenRepo: () => void; onDirty: (dirty: boolean) => void; onApi: (api: TabApi) => void; onSearchRepos: () => void; onAll: (kind: 'pull' | 'fetch') => void }) {
+export function App(p: { be: Backend; active: boolean; theme: Theme; onTheme: (t: Theme) => void; scheme?: Scheme; onScheme: (s?: Scheme) => void; onOpenRepo: () => void; onDirty: (dirty: boolean) => void; onApi: (api: TabApi) => void; onSearchRepos: () => void; onAll: (kind: 'pull' | 'fetch') => void }) {
   const theme = p.theme
-  const setTheme = p.onTheme
+  const look = p.scheme ? `scheme:${p.scheme.id}` : theme
+  const setTheme = (t: Theme) => {
+    p.onScheme(undefined)
+    p.onTheme(t)
+  }
+  const themeMenu = (e: MouseEvent) =>
+    setMenu({
+      x: e.clientX,
+      y: e.clientY,
+      items: [
+        { label: 'Dark', checked: !p.scheme && theme === 'dark', onClick: () => setTheme('dark') },
+        { label: 'Light', checked: !p.scheme && theme === 'light', onClick: () => setTheme('light') },
+        ...(p.scheme ? [{ label: p.scheme.name, checked: true }] : []),
+        { sep: true },
+        { label: 'Color scheme from a link…', onClick: () => setDialog({ kind: 'scheme' }) },
+      ],
+    })
   const [view, setView] = useState<View>()
   const [sel, setSel] = useState<Sel>()
   const [diffTabs, setDiffTabs] = useState<DiffTab[]>([])
@@ -101,7 +118,7 @@ export function App(p: { be: Backend; active: boolean; theme: Theme; onTheme: (t
   const [solo, setSolo] = useState<Set<string>>(new Set())
   const [dialog, setDialog] = useState<Dialog>()
   const [menu, setMenu] = useState<MenuState>()
-  const [palette, setPalette] = useState(false)
+  const [palette, setPalette] = useState<false | 'all' | 'branches'>(false)
   const [shortcuts, setShortcuts] = useState(false)
   const [busy, setBusy] = useState<string>()
   const [toast, setToast] = useState<string>()
@@ -126,9 +143,9 @@ export function App(p: { be: Backend; active: boolean; theme: Theme; onTheme: (t
   const consent = useRef<((agent?: string) => void) | undefined>(undefined)
   const overlayRef = useRef(false)
   const filterRef = useRef<HTMLInputElement>(null)
-  const openPalette = (on: boolean) => {
-    overlayRef.current = on
-    setPalette(on)
+  const openPalette = (on: boolean | 'branches') => {
+    overlayRef.current = !!on
+    setPalette(on === true ? 'all' : on)
   }
   const viewRef = useRef(view)
   viewRef.current = view
@@ -508,7 +525,9 @@ export function App(p: { be: Backend; active: boolean; theme: Theme; onTheme: (t
       }, {
         after: (x) => (x === 'conflicts' ? setToast('Resolve the conflicts and Continue, then push again.') : afterPush(x as PushResult | void)),
       })
-    setDialog({ kind: 'push-rejected', branch: head!, ahead: r.ahead, behind: r.behind, rebase: integrate('rebase'), merge: integrate('merge'), force: () => pushHead(r.theirs) })
+    const n = (k: number) => `${k} commit${k === 1 ? '' : 's'}`
+    const force = () => confirm(`Force pushing replaces ${head} on the remote and drops ${n(r.behind)} that only the remote has. Continue?`, () => pushHead(r.theirs))
+    setDialog({ kind: 'push-rejected', branch: head!, ahead: r.ahead, behind: r.behind, rebase: integrate('rebase'), merge: integrate('merge'), force })
   }
 
   const undoRebase = () => {
@@ -739,6 +758,7 @@ export function App(p: { be: Backend; active: boolean; theme: Theme; onTheme: (t
       { id: 'left', group: 'View', label: 'Toggle the left panel', hint: '⌘J', run: () => setShowLeft((s) => !s) },
       { id: 'right', group: 'View', label: 'Toggle the detail panel', hint: '⌘K', run: () => setShowRight((s) => !s) },
       { id: 'theme', group: 'View', label: theme === 'dark' ? 'Switch to the light theme' : 'Switch to the dark theme', run: () => setTheme(theme === 'dark' ? 'light' : 'dark') },
+      { id: 'scheme', group: 'View', label: 'Use a color scheme from a link…', run: () => setDialog({ kind: 'scheme' }) },
       { id: 'tree', group: 'View', label: tree ? 'Show files as a flat list' : 'Show files as a tree', run: () => setTree(!tree) },
       { id: 'keys', group: 'View', label: 'Keyboard shortcuts', hint: '?', run: () => setShortcuts(true) },
       { id: 'repos', group: 'View', label: 'Search open repositories', hint: '⌘⇧A', run: p.onSearchRepos },
@@ -876,7 +896,7 @@ export function App(p: { be: Backend; active: boolean; theme: Theme; onTheme: (t
         <button onClick={() => setShortcuts(true)} title="Keyboard shortcuts (?)">
           <Icon name="keyboard" />
         </button>
-        <button onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} title={theme === 'dark' ? 'Switch to the light theme' : 'Switch to the dark theme'}>
+        <button onClick={themeMenu} title="Theme and color scheme" aria-label="Theme and color scheme">
           <Icon name="color-mode" />
         </button>
       </div>
@@ -889,8 +909,9 @@ export function App(p: { be: Backend; active: boolean; theme: Theme; onTheme: (t
         <div class="toolbar" />
         <div class="placeholder">{busy ? `${busy}...` : 'This repository could not be read.'}</div>
         {statusBar()}
+        {menu && <Menu menu={menu} onClose={() => setMenu(undefined)} />}
         {shortcuts && <Shortcuts onClose={() => setShortcuts(false)} />}
-        {dialog && <Dialogs dialog={dialog} settings={settings} native={p.be.native} onClose={() => setDialog(undefined)} onCreateBranch={() => {}} onCreateTag={() => {}} onRename={() => {}} onStash={() => {}} onReset={() => {}} onSettings={() => {}} />}
+        {dialog && <Dialogs dialog={dialog} settings={settings} native={p.be.native} onClose={() => setDialog(undefined)} onCreateBranch={() => {}} onCreateTag={() => {}} onRename={() => {}} onStash={() => {}} onReset={() => {}} onSettings={() => {}} onScheme={p.onScheme} />}
       </div>
     )
   }
@@ -907,10 +928,16 @@ export function App(p: { be: Backend; active: boolean; theme: Theme; onTheme: (t
       <div class="toolbar">
         <div class="tb-side">
           <span class="repo">{v.data.name}</span>
-          <span class="branch">
+          <button
+            class={`branch ${v.data.headBranch ? '' : 'detached'}`}
+            disabled={v.data.local.length === 0}
+            onClick={() => openPalette('branches')}
+            title={v.data.headBranch ? `Checked out: ${v.data.headBranch}. Click to switch.` : 'Not on a branch. Click to switch to one.'}
+          >
             <Icon name="git-branch" />
-            {v.data.headBranch ?? (v.data.headOid ? `detached at ${v.data.headOid.slice(0, 7)}` : 'no commits')}
-          </span>
+            <span class="name">{v.data.headBranch ?? (v.data.headOid ? `detached at ${v.data.headOid.slice(0, 7)}` : 'no commits')}</span>
+            <Icon name="chevron-down" />
+          </button>
           {busy && <span class="busy">{busy}...</span>}
         </div>
         <div class="tb-actions" role="toolbar" aria-label="Repository actions">
@@ -1071,12 +1098,18 @@ export function App(p: { be: Backend; active: boolean; theme: Theme; onTheme: (t
               <Icon name="trash" />
             </button>
           </div>
-          <AgentTerminal be={p.be} agent={drawer.agent} dark={theme === 'dark'} paste={paste} restart={restart} onState={setTermState} onPasted={() => setPaste(undefined)} />
+          <AgentTerminal be={p.be} agent={drawer.agent} look={look} paste={paste} restart={restart} onState={setTermState} onPasted={() => setPaste(undefined)} />
         </div>
       )}
       {statusBar(v)}
       {menu && <Menu menu={menu} onClose={() => setMenu(undefined)} />}
-      {palette && <Palette commands={commands} onClose={() => openPalette(false)} />}
+      {palette && (
+        <Palette
+          commands={palette === 'branches' ? commands.filter((c) => c.id.startsWith('sw:') || c.id.startsWith('swr:')) : commands}
+          placeholder={palette === 'branches' ? 'Switch to a branch' : undefined}
+          onClose={() => openPalette(false)}
+        />
+      )}
       {shortcuts && <Shortcuts onClose={() => setShortcuts(false)} />}
       {activeTab && (
         <DiffWindow
@@ -1085,7 +1118,7 @@ export function App(p: { be: Backend; active: boolean; theme: Theme; onTheme: (t
           be={v.be}
           stamp={v}
           options={diffOptions}
-          dark={theme === 'dark'}
+          look={look}
           actionsFor={actionsFor}
           onActivate={setActiveDiff}
           onCloseTab={closeTab}
@@ -1112,6 +1145,7 @@ export function App(p: { be: Backend; active: boolean; theme: Theme; onTheme: (t
             saveSettings(s)
           }}
           onSuggestBranch={aiReady ? (at) => aiDraft('branch', at) : undefined}
+          onScheme={p.onScheme}
           suggesting={drafting === 'branch'}
         />
       )}

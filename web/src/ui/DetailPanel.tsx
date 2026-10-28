@@ -275,29 +275,6 @@ export function DetailPanel(p: DetailProps) {
       </div>
       <div class="files staging">
         <div class="fhead">
-          Staged
-          <span class="count">{s.staged.length}</span>
-          <span class="spacer" />
-          {s.staged.length > 0 && (
-            <button class="icon" title="Unstage everything" onClick={p.onUnstageAll}>
-              <Icon name="remove" />
-            </button>
-          )}
-        </div>
-        <FileList
-          files={s.staged}
-          tree={p.tree}
-          isSelected={(f) => isSel('staged', f.path)}
-          onPick={(f) => p.onSelectFile({ area: { kind: 'staged' }, path: f.path })}
-          onMenu={(e, f) => p.onFileMenu(e, f, { kind: 'staged' })}
-          actions={(f) => (
-            <button title="Unstage" onClick={(e) => (e.stopPropagation(), p.onUnstage([f.path]))}>
-              <Icon name="remove" />
-            </button>
-          )}
-        />
-        <div class="gap" />
-        <div class="fhead">
           Changes
           <span class="count">{s.unstaged.length}</span>
           <span class="spacer" />
@@ -328,6 +305,29 @@ export function DetailPanel(p: DetailProps) {
                 <Icon name="add" />
               </button>
             </>
+          )}
+        />
+        <div class="gap" />
+        <div class="fhead">
+          Staged
+          <span class="count">{s.staged.length}</span>
+          <span class="spacer" />
+          {s.staged.length > 0 && (
+            <button class="icon" title="Unstage everything" onClick={p.onUnstageAll}>
+              <Icon name="remove" />
+            </button>
+          )}
+        </div>
+        <FileList
+          files={s.staged}
+          tree={p.tree}
+          isSelected={(f) => isSel('staged', f.path)}
+          onPick={(f) => p.onSelectFile({ area: { kind: 'staged' }, path: f.path })}
+          onMenu={(e, f) => p.onFileMenu(e, f, { kind: 'staged' })}
+          actions={(f) => (
+            <button title="Unstage" onClick={(e) => (e.stopPropagation(), p.onUnstage([f.path]))}>
+              <Icon name="remove" />
+            </button>
           )}
         />
       </div>
