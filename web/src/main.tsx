@@ -1,7 +1,8 @@
 import { Buffer } from 'buffer'
 import { render } from 'preact'
+import '@vscode/codicons/dist/codicon.css'
 import './styles.css'
-import { App } from './ui/App'
+import { Shell } from './ui/Shell'
 
 ;(globalThis as { Buffer?: typeof Buffer }).Buffer ??= Buffer
-render(<App />, document.getElementById('app')!)
+render(<Shell />, document.getElementById('app')!)

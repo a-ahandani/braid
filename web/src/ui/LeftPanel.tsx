@@ -1,6 +1,6 @@
 import { useState } from 'preact/hooks'
 import type { RepoData } from '../git/repo'
-import { laneColor } from './bits'
+import { Icon, laneColor } from './bits'
 
 export interface LeftProps {
   data: RepoData
@@ -20,7 +20,7 @@ export interface LeftProps {
 function Section({ title, count, open, onToggle }: { title: string; count: number; open: boolean; onToggle: () => void }) {
   return (
     <div class="section" onClick={onToggle}>
-      <span class="arrow">{open ? '▾' : '▸'}</span>
+      <Icon name={open ? 'chevron-down' : 'chevron-right'} />
       {title}
       <span class="count">{count}</span>
     </div>
@@ -46,7 +46,7 @@ export function LeftPanel(p: LeftProps) {
         p.onToggleSolo(name)
       }}
     >
-      ◉
+      <Icon name="eye" />
     </button>
   )
   const byRemote = new Map<string, typeof p.data.remote>()
@@ -82,12 +82,12 @@ export function LeftPanel(p: LeftProps) {
             {soloBtn(b.name)}
             {!!(b.ahead || b.behind) && (
               <span class="meta">
-                {b.ahead ? `↑${b.ahead}` : ''}
-                {b.behind ? ` ↓${b.behind}` : ''}
+                {b.ahead ? <><Icon name="arrow-small-up" />{b.ahead}</> : null}
+                {b.behind ? <><Icon name="arrow-small-down" />{b.behind}</> : null}
               </span>
             )}
             {b.gone && <span class="meta">gone</span>}
-            {b.isHead && <span class="meta" style={{ color: 'var(--green)' }}>✓</span>}
+            {b.isHead && <span class="meta" style={{ color: 'var(--green)' }}><Icon name="check" /></span>}
           </div>
         ))}
       {open.local && local.length === 0 && <div class="empty">{q ? 'No matching branches' : 'No branches yet'}</div>}

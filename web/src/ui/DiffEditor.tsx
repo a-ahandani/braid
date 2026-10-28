@@ -1,21 +1,15 @@
-import type { Extension } from '@codemirror/state'
-import { Compartment, EditorState, Text } from '@codemirror/state'
-import { EditorView, lineNumbers } from '@codemirror/view'
-import { LanguageDescription } from '@codemirror/language'
-import { languages } from '@codemirror/language-data'
-import { MergeView, getChunks, getOriginalDoc, goToNextChunk, goToPreviousChunk, unifiedMergeView } from '@codemirror/merge'
-import { oneDark } from '@codemirror/theme-one-dark'
-import { minimalSetup } from 'codemirror'
+import type { editor } from 'monaco-editor/editor/editor.api'
 import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks'
-import { applyChunk, type ChunkRange } from '../git/chunk'
+import { applyChange, withBom, type LineChange } from '../git/chunk'
+import { Icon } from './bits'
 
 export type DiffMode = 'inline' | 'split'
 
 export interface ChunkAction {
   label: string
-  danger?: boolean
+  icon: string
   into: 'a' | 'b'
-  run: (text: string) => void
+  run: (text: string, base: string) => void
 }
 
 export interface DiffEditorProps {
@@ -25,10 +19,12 @@ export interface DiffEditorProps {
   mode: DiffMode
   dark: boolean
   wrap: boolean
+  collapse: boolean
   editable: boolean
   dirty: boolean
   actions: ChunkAction[]
   onDirty: (dirty: boolean) => void
+  onSave: () => void
   handle?: (h: DiffEditorHandle) => void
 }
 
@@ -38,132 +34,135 @@ export interface DiffEditorHandle {
   text: () => string
 }
 
-const langCache = new Map<string, Promise<Extension>>()
-
-function languageFor(filename: string): Promise<Extension> | undefined {
-  const desc = LanguageDescription.matchFilename(languages, filename)
-  if (!desc) return undefined
-  let p = langCache.get(desc.name)
-  if (!p) {
-    p = desc.load().then((s) => s.extension)
-    langCache.set(desc.name, p)
-  }
-  return p
-}
-
 interface Control {
   top: number
-  chunk: ChunkRange
+  change: LineChange
 }
+
+const theme = (dark: boolean) => (dark ? 'ramulus-dark' : 'ramulus-light')
 
 export function DiffEditor(p: DiffEditorProps) {
   const host = useRef<HTMLDivElement>(null)
   const [controls, setControls] = useState<Control[]>([])
-  const views = useRef<{ main: EditorView; merge?: MergeView; lang: Compartment; wrapC: Compartment; themeC: Compartment } | undefined>(undefined)
+  const diffRef = useRef<{ diff: editor.IStandaloneDiffEditor; setTheme: (t: string) => void } | undefined>(undefined)
+  const base = useRef({ version: 0, applying: false })
+  const latest = useRef(p)
+  latest.current = p
 
   useLayoutEffect(() => {
     const parent = host.current
     if (!parent) return
-    const lang = new Compartment()
-    const wrapC = new Compartment()
-    const themeC = new Compartment()
-    const sep = /\r\n/.test(p.newText || p.oldText) ? '\r\n' : '\n'
-    const shared = [minimalSetup, lineNumbers(), EditorState.lineSeparator.of(sep), themeC.of(p.dark ? oneDark : []), wrapC.of(p.wrap ? EditorView.lineWrapping : []), lang.of([])]
-    let main: EditorView
-    let merge: MergeView | undefined
-    const measure = () => {
-      const chunks = getChunks(main.state)?.chunks ?? []
-      const rect = parent.getBoundingClientRect()
-      const out: Control[] = []
-      for (const c of chunks) {
-        const pos = Math.min(c.fromB, main.state.doc.length)
-        const coords = main.coordsAtPos(pos)
-        if (!coords) continue
-        out.push({ top: coords.top - rect.top, chunk: { fromA: c.fromA, toA: c.toA, fromB: c.fromB, toB: c.toB } })
+    let gone = false
+    let dispose = () => {}
+    import('./monaco').then(({ monaco, languageFor }) => {
+      if (gone) return
+      const o = latest.current
+      const lang = languageFor(o.filename)
+      const original = monaco.editor.createModel(o.oldText, lang)
+      const modified = monaco.editor.createModel(o.newText, lang)
+      const diff = monaco.editor.createDiffEditor(parent, {
+        theme: theme(o.dark),
+        automaticLayout: true,
+        renderSideBySide: o.mode === 'split',
+        useInlineViewWhenSpaceIsLimited: false,
+        originalEditable: false,
+        readOnly: !o.editable,
+        ignoreTrimWhitespace: false,
+        renderMarginRevertIcon: false,
+        renderGutterMenu: false,
+        diffWordWrap: o.wrap ? 'on' : 'off',
+        hideUnchangedRegions: { enabled: o.collapse },
+        minimap: { enabled: false },
+        scrollBeyondLastLine: false,
+        fixedOverflowWidgets: true,
+      })
+      diff.setModel({ original, modified })
+      const mod = diff.getModifiedEditor()
+      base.current.version = modified.getAlternativeVersionId()
+      const measure = () => {
+        const lh = mod.getOption(monaco.editor.EditorOption.lineHeight)
+        const offset = (mod.getDomNode()?.getBoundingClientRect().top ?? 0) - parent.getBoundingClientRect().top - mod.getScrollTop()
+        const count = modified.getLineCount()
+        const inline = latest.current.mode === 'inline'
+        setControls(
+          (diff.getLineChanges() ?? []).map((c) => {
+            const removed = c.originalEndLineNumber === 0 ? 0 : c.originalEndLineNumber - c.originalStartLineNumber + 1
+            const after = c.modifiedStartLineNumber + 1
+            const top =
+              c.modifiedEndLineNumber === 0
+                ? (after > count ? mod.getTopForLineNumber(count) + lh : mod.getTopForLineNumber(after)) - removed * lh
+                : mod.getTopForLineNumber(c.modifiedStartLineNumber) - (inline ? removed * lh : 0)
+            return { top: offset + top, change: c }
+          }),
+        )
       }
-      setControls(out)
-    }
-    let raf = 0
-    const schedule = () => {
-      cancelAnimationFrame(raf)
-      raf = requestAnimationFrame(measure)
-    }
-    const listener = EditorView.updateListener.of((u) => {
-      if (u.docChanged) p.onDirty(u.state.sliceDoc() !== p.newText)
-      if (u.docChanged || u.viewportChanged || u.geometryChanged) schedule()
-    })
-    const readOnly = EditorState.readOnly.of(!p.editable)
-    if (p.mode === 'split') {
-      merge = new MergeView({
-        parent,
-        orientation: 'a-b',
-        highlightChanges: true,
-        gutter: true,
-        collapseUnchanged: { margin: 3, minSize: 4 },
-        a: { doc: p.oldText, extensions: [...shared, EditorState.readOnly.of(true)] },
-        b: { doc: p.newText, extensions: [...shared, readOnly, listener] },
+      const subs = [
+        modified.onDidChangeContent(() => base.current.applying || latest.current.onDirty(modified.getAlternativeVersionId() !== base.current.version)),
+        diff.onDidUpdateDiff(measure),
+        mod.onDidScrollChange(measure),
+        mod.onDidLayoutChange(measure),
+        mod.addAction({ id: 'ramulus.save', label: 'Save', keybindings: [monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS], run: () => latest.current.onSave() }),
+      ]
+      diffRef.current = { diff, setTheme: monaco.editor.setTheme }
+      latest.current.handle?.({
+        next: () => diff.goToDiff('next'),
+        prev: () => diff.goToDiff('previous'),
+        text: () => modified.getValue(undefined, true),
       })
-      main = merge.b
-    } else {
-      main = new EditorView({
-        parent,
-        doc: p.newText,
-        extensions: [
-          ...shared,
-          readOnly,
-          listener,
-          unifiedMergeView({ original: Text.of(p.oldText.split(sep)), highlightChanges: true, gutter: true, mergeControls: false, collapseUnchanged: { margin: 3, minSize: 4 } }),
-        ],
-      })
-    }
-    views.current = { main, merge, lang, wrapC, themeC }
-    languageFor(p.filename)?.then((ext) => {
-      if (views.current?.main !== main) return
-      main.dispatch({ effects: lang.reconfigure(ext) })
-      merge?.a.dispatch({ effects: lang.reconfigure(ext) })
-    })
-    const scrollers = [main.scrollDOM, merge?.a.scrollDOM, merge?.dom].filter((s): s is HTMLElement => !!s)
-    scrollers.forEach((s) => s.addEventListener('scroll', schedule))
-    schedule()
-    p.handle?.({
-      next: () => goToNextChunk({ state: main.state, dispatch: main.dispatch.bind(main) }),
-      prev: () => goToPreviousChunk({ state: main.state, dispatch: main.dispatch.bind(main) }),
-      text: () => main.state.sliceDoc(),
+      dispose = () => {
+        subs.forEach((s) => s.dispose())
+        diff.dispose()
+        original.dispose()
+        modified.dispose()
+      }
     })
     return () => {
-      cancelAnimationFrame(raf)
-      scrollers.forEach((s) => s.removeEventListener('scroll', schedule))
-      merge ? merge.destroy() : main.destroy()
-      views.current = undefined
+      gone = true
+      dispose()
+      diffRef.current = undefined
+      setControls([])
     }
-  }, [p.oldText, p.newText, p.filename, p.mode, p.editable])
+  }, [p.filename, p.editable])
 
   useEffect(() => {
-    const v = views.current
-    if (!v) return
-    for (const view of [v.main, v.merge?.a]) view?.dispatch({ effects: [v.wrapC.reconfigure(p.wrap ? EditorView.lineWrapping : []), v.themeC.reconfigure(p.dark ? oneDark : [])] })
-  }, [p.wrap, p.dark])
+    const model = diffRef.current?.diff.getModel()
+    if (!model) return
+    const oldChanged = model.original.getValue(undefined, true) !== p.oldText
+    const newChanged = model.modified.getValue(undefined, true) !== p.newText
+    if (newChanged && model.modified.getAlternativeVersionId() !== base.current.version) return
+    if (oldChanged || newChanged) setControls([])
+    if (oldChanged) model.original.setValue(p.oldText)
+    base.current.applying = true
+    if (newChanged) model.modified.setValue(p.newText)
+    base.current.applying = false
+    base.current.version = model.modified.getAlternativeVersionId()
+    p.onDirty(false)
+  }, [p.oldText, p.newText])
+
+  useEffect(() => {
+    const d = diffRef.current
+    if (!d) return
+    d.diff.updateOptions({ renderSideBySide: p.mode === 'split', diffWordWrap: p.wrap ? 'on' : 'off', hideUnchangedRegions: { enabled: p.collapse } })
+    d.setTheme(theme(p.dark))
+  }, [p.mode, p.wrap, p.collapse, p.dark])
+
+  const runAction = (a: ChunkAction, change: LineChange) => {
+    const model = diffRef.current?.diff.getModel()
+    if (!model) return
+    const target = a.into === 'a' ? model.original : model.modified
+    const raw = target.getValue(undefined, true)
+    a.run(withBom(raw, applyChange(model.original.getLinesContent(), model.modified.getLinesContent(), change, a.into, target.getEOL())), raw)
+  }
 
   return (
     <div class={`diff-editor ${p.mode}`}>
-      <div class="cm-host" ref={host} />
+      <div class="mo-host" ref={host} />
       {p.actions.length > 0 &&
         controls.map((c, i) => (
           <div class="chunk-ctl" key={i} style={{ top: `${c.top}px` }}>
             {p.actions.map((a) => (
-              <button
-                key={a.label}
-                class={a.danger ? 'danger' : ''}
-                disabled={p.dirty}
-                title={p.dirty ? 'Save or revert your edits first' : undefined}
-                onClick={() => {
-                  const v = views.current
-                  if (!v) return
-                  const original = v.merge ? v.merge.a.state.doc : getOriginalDoc(v.main.state)
-                  a.run(applyChunk(original, v.main.state.doc, c.chunk, a.into, v.main.state.lineBreak))
-                }}
-              >
-                {a.label}
+              <button key={a.label} class="icon" disabled={p.dirty} title={p.dirty ? 'Save or revert your edits first' : a.label} onClick={() => runAction(a, c.change)}>
+                <Icon name={a.icon} />
               </button>
             ))}
           </div>

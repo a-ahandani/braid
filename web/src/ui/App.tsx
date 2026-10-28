@@ -1,13 +1,10 @@
-import { get, set } from 'idb-keyval'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'preact/hooks'
-import { FsaFs } from '../fs/fsa'
-import type { Backend, FileVersions, PullMode } from '../git/backend'
-import { demoRepo } from '../git/demo'
+import type { Backend, PullMode } from '../git/backend'
 import { layout, type RowLayout } from '../git/graph'
-import { httpBackend } from '../git/remote'
-import { localBackend, PAGE, type Commit, type Ctx, type DiffArea, type FileChange, type NetSettings, type RepoData } from '../git/repo'
-import { laneColor, short } from './bits'
-import { DetailPanel, type DiffOptions, type FileSel } from './DetailPanel'
+import { PAGE, type Commit, type DiffArea, type FileChange, type NetSettings, type RepoData } from '../git/repo'
+import { Icon, laneColor, short } from './bits'
+import { DetailPanel, type FileSel } from './DetailPanel'
+import { DiffWindow, tabKey, type DiffOptions, type DiffTab } from './DiffWindow'
 import type { ChunkAction } from './DiffEditor'
 import { Dialogs, type Dialog } from './Dialogs'
 import { GraphView, type DropInfo, type PillData } from './GraphView'
@@ -31,8 +28,6 @@ type Sel = { kind: 'wip' } | { kind: 'commit'; oid: string }
 
 const WIP = '0000000000000000000000000000000000000000'
 const SETTINGS_KEY = 'ramulus.net'
-const canPick = typeof window !== 'undefined' && 'showDirectoryPicker' in window
-const helperToken = typeof location !== 'undefined' && /^#[0-9a-f]{32}$/.test(location.hash) ? location.hash.slice(1) : undefined
 const stored = (key: string) => (typeof localStorage === 'undefined' ? null : localStorage.getItem(key))
 
 function buildView(be: Backend, data: RepoData, limit: number): View {
@@ -54,7 +49,9 @@ function buildView(be: Backend, data: RepoData, limit: number): View {
   return { be, data, rows, layout: l.rows, maxCol: l.maxCol, indexOf, limit }
 }
 
-function loadSettings(): NetSettings {
+export type Theme = 'dark' | 'light'
+
+export function loadSettings(): NetSettings {
   const base: NetSettings = { corsProxy: '', username: '', token: '', authorName: '', authorEmail: '' }
   try {
     const saved = JSON.parse(localStorage.getItem(SETTINGS_KEY) ?? '{}')
@@ -72,18 +69,20 @@ function saveSettings(s: NetSettings) {
 
 const clamp = (n: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, n))
 
-export function App() {
+export function App(p: { be: Backend; active: boolean; theme: Theme; onTheme: (t: Theme) => void; onOpenRepo: () => void; onDirty: (dirty: boolean) => void }) {
+  const theme = p.theme
+  const setTheme = p.onTheme
   const [view, setView] = useState<View>()
   const [sel, setSel] = useState<Sel>()
-  const [fileSel, setFileSel] = useState<FileSel>()
+  const [diffTabs, setDiffTabs] = useState<DiffTab[]>([])
+  const [activeDiff, setActiveDiff] = useState<string>()
   const [commitFiles, setCommitFiles] = useState<FileChange[]>([])
-  const [versions, setVersions] = useState<FileVersions>()
-  const [dirty, setDirty] = useState(false)
-  const [diffOptions, setDiffOptionsState] = useState<DiffOptions>(() => ({ wrap: stored('ramulus.wrap') === '1', mode: stored('ramulus.diff') === 'split' ? 'split' : 'inline' }))
+  const [diffOptions, setDiffOptionsState] = useState<DiffOptions>(() => ({ wrap: stored('ramulus.wrap') === '1', mode: stored('ramulus.diff') === 'inline' ? 'inline' : 'split', collapse: stored('ramulus.collapse') === '1' }))
   const setDiffOptions = (o: DiffOptions) => {
     setDiffOptionsState(o)
     localStorage.setItem('ramulus.wrap', o.wrap ? '1' : '0')
     localStorage.setItem('ramulus.diff', o.mode)
+    localStorage.setItem('ramulus.collapse', o.collapse ? '1' : '0')
   }
   const [tree, setTreeState] = useState(() => stored('ramulus.tree') === '1')
   const [summary, setSummary] = useState('')
@@ -100,15 +99,12 @@ export function App() {
   const [showLeft, setShowLeft] = useState(true)
   const [showRight, setShowRight] = useState(true)
   const [widths, setWidths] = useState(() => ({ left: Number(stored('ramulus.left')) || 240, right: Number(stored('ramulus.right')) || 440 }))
-  const [theme, setTheme] = useState<'dark' | 'light'>(() => (stored('ramulus.theme') as 'dark' | 'light') || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark'))
   const [scrollTo, setScrollTo] = useState<number>()
   const [updatedAt, setUpdatedAt] = useState<Date>()
-  const [recent, setRecent] = useState<FileSystemDirectoryHandle[]>([])
   const [settings, setSettings] = useState<NetSettings>(loadSettings)
   const [pullMode, setPullMode] = useState<PullMode>('merge')
-  const settingsRef = useRef(settings)
-  settingsRef.current = settings
   const overlayRef = useRef(false)
+  const filterRef = useRef<HTMLInputElement>(null)
   const openPalette = (on: boolean) => {
     overlayRef.current = on
     setPalette(on)
@@ -116,13 +112,6 @@ export function App() {
   const viewRef = useRef(view)
   viewRef.current = view
 
-  useEffect(() => {
-    get<FileSystemDirectoryHandle[]>('recent').then((r) => r && setRecent(r))
-  }, [])
-  useEffect(() => {
-    document.documentElement.dataset.theme = theme
-    localStorage.setItem('ramulus.theme', theme)
-  }, [theme])
   useEffect(() => {
     localStorage.setItem('ramulus.left', String(widths.left))
     localStorage.setItem('ramulus.right', String(widths.right))
@@ -150,7 +139,7 @@ export function App() {
       return hasWip ? { kind: 'wip' } : data.headOid ? { kind: 'commit', oid: data.headOid } : undefined
     })
     if (fresh) {
-      setFileSel(undefined)
+      setDiffTabs([])
       setFilter('')
       setSolo(new Set())
       setSummary('')
@@ -170,35 +159,9 @@ export function App() {
     }
   }
 
-  const openCtx = (ctx: Ctx) => openBackend(localBackend(ctx, () => settingsRef.current))
-
   useEffect(() => {
-    if (helperToken) openBackend(httpBackend(location.origin, helperToken))
+    openBackend(p.be)
   }, [])
-
-  const openHandle = async (handle: FileSystemDirectoryHandle) => {
-    const perm = await handle.requestPermission({ mode: 'readwrite' })
-    if (perm !== 'granted') return
-    const fs = new FsaFs(handle)
-    const same = await Promise.all(recent.map((h) => h.isSameEntry(handle).catch(() => false)))
-    const list = [handle, ...recent.filter((_, i) => !same[i])].slice(0, 10)
-    setRecent(list)
-    await set('recent', list)
-    const fallbackAuthor = () => {
-      const s = settingsRef.current
-      return s.authorName && s.authorEmail ? { name: s.authorName, email: s.authorEmail } : undefined
-    }
-    await openCtx({ fs, dir: '/', cache: {}, fallbackAuthor })
-  }
-
-  const pickFolder = async () => {
-    try {
-      const handle = await window.showDirectoryPicker({ mode: 'readwrite' })
-      await openHandle(handle)
-    } catch (e) {
-      if (!(e instanceof DOMException && e.name === 'AbortError')) fail('Could not open the folder', e)
-    }
-  }
 
   const reload = useCallback(async () => {
     const v = viewRef.current
@@ -211,13 +174,17 @@ export function App() {
   }, [applyData])
 
   useEffect(() => {
-    if (!view?.be.subscribe) return
+    if (!view?.be.subscribe || !p.active) return
     let timer: ReturnType<typeof setTimeout> | undefined
     return view.be.subscribe(() => {
       clearTimeout(timer)
       timer = setTimeout(reload, 150)
     })
-  }, [view?.be, reload])
+  }, [view?.be, reload, p.active])
+
+  useEffect(() => {
+    if (p.active) reload()
+  }, [p.active])
 
   const run = async (label: string, fn: () => Promise<unknown>, opts: { after?: (r: unknown) => void; statusOnly?: boolean } = {}) => {
     if (!view || busy) return
@@ -251,30 +218,14 @@ export function App() {
   }, [view, sel])
 
   useEffect(() => {
-    setVersions(undefined)
-    setDirty(false)
-  }, [fileSel])
-
-  useEffect(() => {
-    if (!view || !fileSel || dirty) return
-    let live = true
-    view.be
-      .fileVersions(fileSel.area, fileSel.path)
-      .then((v) => live && setVersions(v))
-      .catch(() => live && setVersions({ old: '', new: '', binary: true }))
-    return () => {
-      live = false
+    if (!view) return
+    const gone = (t: DiffTab) => {
+      if (t.dirty || t.sel.area.kind === 'commit') return false
+      const list = t.sel.area.kind === 'staged' ? view.data.status.staged : view.data.status.unstaged
+      return !list.some((f) => f.path === t.sel.path)
     }
-  }, [view, fileSel, dirty])
-
-  useEffect(() => {
-    if (!view || !fileSel) return
-    const exists =
-      fileSel.area.kind === 'commit'
-        ? commitFiles.some((f) => f.path === fileSel.path)
-        : (fileSel.area.kind === 'staged' ? view.data.status.staged : view.data.status.unstaged).some((f) => f.path === fileSel.path)
-    if (!exists) setFileSel(undefined)
-  }, [view, commitFiles, fileSel])
+    setDiffTabs((ts) => (ts.some(gone) ? ts.filter((t) => !gone(t)) : ts))
+  }, [view])
 
   const soloInfo = useMemo(() => {
     if (!view || solo.size === 0) return undefined
@@ -318,10 +269,7 @@ export function App() {
     const c = view.rows[index]
     if (!c) return
     const next: Sel = c.kind === 'wip' ? { kind: 'wip' } : { kind: 'commit', oid: c.id }
-    if (JSON.stringify(next) !== JSON.stringify(sel)) {
-      setSel(next)
-      setFileSel(undefined)
-    }
+    if (JSON.stringify(next) !== JSON.stringify(sel)) setSel(next)
   }
 
   const jump = (oid: string) => {
@@ -505,29 +453,52 @@ export function App() {
     confirm(what, () => run('Discarding', () => v.be.discard(files), { statusOnly: true }))
   }
 
-  const chunkActions: ChunkAction[] = (() => {
+  const actionsFor = (f: FileSel): ChunkAction[] => {
     const v = view
-    const f = fileSel
-    if (!v || !f || f.area.kind === 'commit') return []
+    if (!v || f.area.kind === 'commit') return []
     const list = f.area.kind === 'staged' ? v.data.status.staged : v.data.status.unstaged
     if (list.find((x) => x.path === f.path)?.kind !== 'M') return []
-    if (f.area.kind === 'staged') return [{ label: 'Unstage', into: 'b', run: (t) => run('Unstaging chunk', () => v.be.writeIndex(f.path, t), { statusOnly: true }) }]
+    if (f.area.kind === 'staged') return [{ label: 'Unstage this change', icon: 'remove', into: 'b', run: (t, base) => run('Unstaging chunk', () => v.be.writeIndex(f.path, t, base), { statusOnly: true }) }]
     return [
-      { label: 'Stage', into: 'a', run: (t) => run('Staging chunk', () => v.be.writeIndex(f.path, t), { statusOnly: true }) },
+      { label: 'Stage this change', icon: 'add', into: 'a', run: (t, base) => run('Staging chunk', () => v.be.writeIndex(f.path, t, base), { statusOnly: true }) },
       {
-        label: 'Discard',
-        danger: true,
+        label: 'Discard this change',
+        icon: 'discard',
         into: 'b',
-        run: (t) => confirm(`This change in "${f.path}" will be reverted in the working tree. Continue?`, () => run('Discarding chunk', () => v.be.writeWorkdir(f.path, t), { statusOnly: true })),
+        run: (t, base) => confirm(`This change in "${f.path}" will be reverted in the working tree. Continue?`, () => run('Discarding chunk', () => v.be.writeWorkdir(f.path, t, base), { statusOnly: true })),
       },
     ]
-  })()
-  const saveFile = (text: string) => {
-    const v = view
-    const f = fileSel
-    if (!v || !f) return
-    run('Saving', () => v.be.writeWorkdir(f.path, text), { statusOnly: true, after: () => setDirty(false) })
   }
+  const saveFile = (f: FileSel, text: string, base: string, done: () => void) => {
+    const v = view
+    if (v) run('Saving', () => v.be.writeWorkdir(f.path, text, base), { statusOnly: true, after: done })
+  }
+  const activeTab = diffTabs.find((t) => t.key === activeDiff) ?? diffTabs[0]
+  const fileSel = activeTab?.sel
+  const openFile = (f: FileSel) => {
+    const key = tabKey(f)
+    setDiffTabs((ts) => (ts.some((t) => t.key === key) ? ts : [...ts, { key, sel: f, dirty: false }]))
+    setActiveDiff(key)
+  }
+  const dropTab = (key: string) => {
+    const i = diffTabs.findIndex((t) => t.key === key)
+    const rest = diffTabs.filter((t) => t.key !== key)
+    setDiffTabs((ts) => ts.filter((t) => t.key !== key))
+    if (activeTab?.key === key) setActiveDiff(rest[Math.min(i, rest.length - 1)]?.key)
+  }
+  const closeTab = (key: string) => {
+    const t = diffTabs.find((x) => x.key === key)
+    if (t?.dirty) confirm(`Unsaved edits to "${t.sel.path}" will be lost. Continue?`, () => dropTab(key))
+    else dropTab(key)
+  }
+  const closeAllTabs = () => {
+    const dirtyCount = diffTabs.filter((t) => t.dirty).length
+    if (dirtyCount) confirm(`Unsaved edits in ${dirtyCount} file${dirtyCount === 1 ? '' : 's'} will be lost. Continue?`, () => setDiffTabs([]))
+    else setDiffTabs([])
+  }
+  const anyDirty = diffTabs.some((t) => t.dirty)
+  useEffect(() => p.onDirty(anyDirty), [anyDirty])
+  const setTabDirty = (key: string, d: boolean) => setDiffTabs((ts) => ts.map((t) => (t.key === key && t.dirty !== d ? { ...t, dirty: d } : t)))
 
   const pillDoubleClick = (pill: PillData) => {
     if (!view) return
@@ -573,7 +544,7 @@ export function App() {
       { id: 'keys', group: 'View', label: 'Keyboard shortcuts', hint: '?', run: () => setShortcuts(true) },
     ]
     if (solo.size) list.push({ id: 'unsolo', group: 'View', label: 'Show all branches', run: () => setSolo(new Set()) })
-    if (canPick && !helperToken) list.push({ id: 'open', group: 'Action', label: 'Open a repository folder', run: pickFolder })
+    list.push({ id: 'open', group: 'Action', label: 'Open repository…', run: p.onOpenRepo })
     for (const b of v.data.local) {
       if (!b.isHead) list.push({ id: `sw:${b.name}`, group: 'Branch', label: `Switch to ${b.name}`, run: () => run('Switching branch', () => v.be.checkoutBranch(b.name)) })
       list.push({ id: `solo:${b.name}`, group: 'Branch', label: `Solo ${b.name}`, run: () => toggleSolo(b.name) })
@@ -585,15 +556,17 @@ export function App() {
   }, [view, head, pullMode, theme, tree, solo])
 
   useEffect(() => {
+    if (!p.active) return
     const onKey = (e: KeyboardEvent) => {
+      if (e.target instanceof Element && e.target.closest('.diff-window')) return
       const mod = e.metaKey || e.ctrlKey
-      const typing = e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement
+      const typing = e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || (e.target instanceof HTMLElement && e.target.isContentEditable)
       if (mod && (e.key === 'p' || e.key === 'P')) {
         e.preventDefault()
         if (view) openPalette(!palette)
       } else if (mod && e.key === 'f') {
         e.preventDefault()
-        document.getElementById('filter')?.focus()
+        filterRef.current?.focus()
       } else if (mod && e.key === 'b' && view?.data.headOid) {
         e.preventDefault()
         setDialog({ kind: 'branch', at: view.data.headOid })
@@ -625,12 +598,6 @@ export function App() {
         if (e.key === '?') {
           e.preventDefault()
           setShortcuts(true)
-        } else if ((e.key === 's' || e.key === 'u') && view && fileSel && fileSel.area.kind !== 'commit') {
-          e.preventDefault()
-          const list = fileSel.area.kind === 'staged' ? view.data.status.staged : view.data.status.unstaged
-          const f = list.find((x) => x.path === fileSel.path)
-          if (f && e.key === 's' && fileSel.area.kind === 'unstaged') run('Staging', () => view.be.stage([f]), { statusOnly: true })
-          if (f && e.key === 'u' && fileSel.area.kind === 'staged') run('Unstaging', () => view.be.unstage([f.path]), { statusOnly: true })
         } else if (view && (e.key === 'ArrowDown' || e.key === 'ArrowUp' || e.key === 'j' || e.key === 'k')) {
           e.preventDefault()
           const step = e.key === 'ArrowDown' || e.key === 'j' ? 1 : -1
@@ -655,25 +622,47 @@ export function App() {
         {v && (
           <>
             <span>
+              <Icon name="git-branch" />
               {head ?? (v.data.headOid ? 'detached HEAD' : 'no commits')}
-              {cur?.upstream ? ` · ↑${cur.ahead ?? 0} ↓${cur.behind ?? 0} vs ${cur.upstream}` : head ? ' · no upstream' : ''}
             </span>
-            {changes > 0 && <span class="warn">{changes} uncommitted change{changes === 1 ? '' : 's'}</span>}
-            {v.data.stashes.length > 0 && <span>{v.data.stashes.length} stash{v.data.stashes.length === 1 ? '' : 'es'}</span>}
+            {cur?.upstream ? (
+              <span title={`Compared with ${cur.upstream}`}>
+                <Icon name="sync" />
+                {cur.behind ?? 0}
+                <Icon name="arrow-small-down" />
+                {cur.ahead ?? 0}
+                <Icon name="arrow-small-up" />
+              </span>
+            ) : (
+              head && <span>no upstream</span>
+            )}
+            {changes > 0 && (
+              <span class="warn" title={`${changes} uncommitted change${changes === 1 ? '' : 's'}`}>
+                <Icon name="source-control" />
+                {changes}
+              </span>
+            )}
+            {v.data.stashes.length > 0 && (
+              <span title={`${v.data.stashes.length} stash${v.data.stashes.length === 1 ? '' : 'es'}`}>
+                <Icon name="git-stash" />
+                {v.data.stashes.length}
+              </span>
+            )}
           </>
         )}
         <span class="spacer" />
         {updatedAt && <span title="Last read of the repository">Updated {updatedAt.toLocaleTimeString()}</span>}
         {v && (
-          <button onClick={() => openPalette(true)} title="Command palette">
-            ⌘⇧P commands
+          <button onClick={() => openPalette(true)} title="Command palette (⌘⇧P)">
+            <Icon name="list-selection" />
+            Commands
           </button>
         )}
-        <button onClick={() => setShortcuts(true)} title="Keyboard shortcuts">
-          ? shortcuts
+        <button onClick={() => setShortcuts(true)} title="Keyboard shortcuts (?)">
+          <Icon name="keyboard" />
         </button>
-        <button onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} title="Switch theme">
-          {theme === 'dark' ? '☀ light' : '☾ dark'}
+        <button onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} title={theme === 'dark' ? 'Switch to the light theme' : 'Switch to the dark theme'}>
+          <Icon name="color-mode" />
         </button>
       </div>
     )
@@ -682,60 +671,11 @@ export function App() {
   if (!view) {
     return (
       <div class="app">
-        <div class="toolbar">
-          <span class="repo">Ramulus</span>
-        </div>
-        <div class="welcome">
-          <h1>Ramulus</h1>
-          <p>Every branch of your repository, in one graph.{helperToken ? '' : ' Runs entirely in this browser tab.'}</p>
-          {busy && <p class="busy">{busy}...</p>}
-          {!helperToken && (
-            <>
-              <div style={{ display: 'flex', gap: '8px' }}>
-                {canPick && (
-                  <button class="primary" onClick={pickFolder}>
-                    Open a repository folder
-                  </button>
-                )}
-                <button onClick={() => demoRepo().then(openCtx).catch((e) => fail('Could not build the demo', e))}>Try the demo repository</button>
-              </div>
-              {!canPick && <p class="note">Opening folders needs the File System Access API, which Chrome, Edge and other Chromium browsers provide. Safari and Firefox can only run the demo.</p>}
-              {recent.length > 0 && (
-                <div class="recent">
-                  <span class="label">Recent</span>
-                  {recent.map((h) => (
-                    <a key={h.name} onClick={() => openHandle(h).catch((e) => fail('Could not open the folder', e))}>
-                      {h.name}
-                    </a>
-                  ))}
-                </div>
-              )}
-              <p class="note">Nothing leaves your machine except avatar lookups on gravatar.com and, when you use them, fetch, pull and push through the CORS proxy you set under Settings.</p>
-              <p class="note">
-                For full speed and your SSH keys, run <code>npx ramulus</code> inside a repository instead.
-              </p>
-            </>
-          )}
-        </div>
+        <div class="toolbar" />
+        <div class="placeholder">{busy ? `${busy}...` : 'This repository could not be read.'}</div>
         {statusBar()}
         {shortcuts && <Shortcuts onClose={() => setShortcuts(false)} />}
-        {dialog && (
-          <Dialogs
-            dialog={dialog}
-            settings={settings}
-            native={false}
-            onClose={() => setDialog(undefined)}
-            onCreateBranch={() => {}}
-            onCreateTag={() => {}}
-            onRename={() => {}}
-            onStash={() => {}}
-            onReset={() => {}}
-            onSettings={(s) => {
-              setSettings(s)
-              saveSettings(s)
-            }}
-          />
-        )}
+        {dialog && <Dialogs dialog={dialog} settings={settings} native={p.be.native} onClose={() => setDialog(undefined)} onCreateBranch={() => {}} onCreateTag={() => {}} onRename={() => {}} onStash={() => {}} onReset={() => {}} onSettings={() => {}} />}
       </div>
     )
   }
@@ -751,52 +691,62 @@ export function App() {
     <div class="app">
       <div class="toolbar">
         <span class="repo">{v.data.name}</span>
-        <span style={{ color: 'var(--text-3)' }}>/</span>
-        <span class="branch">{v.data.headBranch ?? (v.data.headOid ? `detached at ${v.data.headOid.slice(0, 7)}` : 'no commits')}</span>
+        <span class="branch">
+          <Icon name="git-branch" />
+          {v.data.headBranch ?? (v.data.headOid ? `detached at ${v.data.headOid.slice(0, 7)}` : 'no commits')}
+        </span>
         <button disabled={!!busy || !head} onClick={() => net('Pull', () => v.be.pull(pullMode, head!))} title="Fetch and integrate the upstream branch">
+          <Icon name="repo-pull" />
           Pull
         </button>
         {v.be.native && (
-          <select value={pullMode} onChange={(e) => setPullMode((e.target as HTMLSelectElement).value as PullMode)} title="How pull integrates changes" style={{ width: 'auto', padding: '4px' }}>
+          <select value={pullMode} onChange={(e) => setPullMode((e.target as HTMLSelectElement).value as PullMode)} title="How pull integrates changes">
             <option value="merge">merge</option>
             <option value="ff-only">fast-forward only</option>
             <option value="rebase">rebase</option>
           </select>
         )}
         <button disabled={!!busy || !head} onClick={() => net('Push', () => v.be.push(head!))} title="Push the checked-out branch">
+          <Icon name="repo-push" />
           Push
         </button>
         <button disabled={!!busy} onClick={() => net('Fetch', () => v.be.fetchAll())} title="Fetch every remote (⌘L)">
+          <Icon name="repo-fetch" />
           Fetch
         </button>
         <button disabled={!!busy || !v.data.headOid} onClick={() => setDialog({ kind: 'branch', at: v.data.headOid! })} title="New branch (⌘B)">
+          <Icon name="git-branch" />
           Branch
         </button>
         <button disabled={!!busy || wipCount === 0} onClick={() => setDialog({ kind: 'stash' })} title="Stash everything">
+          <Icon name="git-stash" />
           Stash
         </button>
         <button disabled={!!busy || v.data.stashes.length === 0} onClick={() => run('Applying stash', () => v.be.stashApply(0, true))} title="Apply and drop the newest stash">
+          <Icon name="git-stash-pop" />
           Pop
         </button>
         {busy && <span class="busy">{busy}...</span>}
         <span class="spacer" />
-        <input id="filter" placeholder="search commits  ⌘F" value={filter} onInput={(e) => setFilter((e.target as HTMLInputElement).value)} />
+        <span class="search">
+          <Icon name="search" />
+          <input ref={filterRef} placeholder="Search commits (⌘F)" value={filter} onInput={(e) => setFilter((e.target as HTMLInputElement).value)} />
+        </span>
         {filter && <span class="busy">{order.length} results</span>}
-        <button class={showLeft ? 'on' : ''} onClick={() => setShowLeft(!showLeft)} title="Toggle left panel (⌘J)">
-          ▤
+        <button class={`icon ${showLeft ? 'on' : ''}`} onClick={() => setShowLeft(!showLeft)} title="Toggle left panel (⌘J)">
+          <Icon name={showLeft ? 'layout-sidebar-left' : 'layout-sidebar-left-off'} />
         </button>
-        <button class={showRight ? 'on' : ''} onClick={() => setShowRight(!showRight)} title="Toggle detail panel (⌘K)">
-          ▣
+        <button class={`icon ${showRight ? 'on' : ''}`} onClick={() => setShowRight(!showRight)} title="Toggle detail panel (⌘K)">
+          <Icon name={showRight ? 'layout-sidebar-right' : 'layout-sidebar-right-off'} />
         </button>
         {!v.be.native && (
-          <button onClick={() => setDialog({ kind: 'settings' })} title="Settings: author and remote access">
-            ⚙
+          <button class="icon" onClick={() => setDialog({ kind: 'settings' })} title="Settings: author and remote access">
+            <Icon name="settings-gear" />
           </button>
         )}
-        <button onClick={() => reload()} title="Refresh">
-          ↻
+        <button class="icon" onClick={() => reload()} title="Refresh">
+          <Icon name="refresh" />
         </button>
-        {canPick && !helperToken && <button onClick={pickFolder}>Open</button>}
       </div>
       <div class={`body ${showLeft ? '' : 'no-left'} ${showRight ? '' : 'no-right'}`} style={{ '--left-w': `${widths.left}px`, '--right-w': `${widths.right}px` }}>
         <LeftPanel
@@ -846,23 +796,15 @@ export function App() {
           commitFiles={commitFiles}
           isStash={!!current && v.data.stashes.some((s) => s.oid === current.id)}
           selectedFile={fileSel}
-          versions={versions}
-          diffOptions={diffOptions}
-          dark={theme === 'dark'}
-          chunkActions={chunkActions}
-          onSaveFile={saveFile}
-          dirty={dirty}
-          onDirty={setDirty}
           tree={tree}
           summary={summary}
           description={description}
           amend={amend}
-          onDiffOptions={setDiffOptions}
           onTree={setTree}
           onSummary={setSummary}
           onDescription={setDescription}
           onAmend={setAmend}
-          onSelectFile={setFileSel}
+          onSelectFile={openFile}
           onStage={(files) => run('Staging', () => v.be.stage(files), { statusOnly: true })}
           onUnstage={(paths) => run('Unstaging', () => v.be.unstage(paths), { statusOnly: true })}
           onDiscard={discardFiles}
@@ -880,6 +822,24 @@ export function App() {
       {menu && <Menu menu={menu} onClose={() => setMenu(undefined)} />}
       {palette && <Palette commands={commands} onClose={() => openPalette(false)} />}
       {shortcuts && <Shortcuts onClose={() => setShortcuts(false)} />}
+      {activeTab && (
+        <DiffWindow
+          tabs={diffTabs}
+          active={activeTab.key}
+          be={v.be}
+          stamp={v}
+          options={diffOptions}
+          dark={theme === 'dark'}
+          actionsFor={actionsFor}
+          onActivate={setActiveDiff}
+          onCloseTab={closeTab}
+          onCloseAll={closeAllTabs}
+          onOptions={setDiffOptions}
+          onDirty={setTabDirty}
+          onSave={saveFile}
+          onOpen={v.be.openPath ? (f) => v.be.openPath!(f.path).catch((err) => fail('Could not open the file', err)) : undefined}
+        />
+      )}
       {dialog && (
         <Dialogs
           dialog={dialog}

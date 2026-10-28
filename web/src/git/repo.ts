@@ -313,17 +313,23 @@ export async function fileVersions(ctx: Ctx, area: DiffArea, path: string): Prom
     newData = await workdirBytes(ctx, path)
   }
   const binary = isBinary(oldData) || isBinary(newData) || (oldData?.length ?? 0) > MAX_TEXT || (newData?.length ?? 0) > MAX_TEXT
-  const dec = new TextDecoder()
+  const dec = new TextDecoder('utf-8', { ignoreBOM: true })
   return { old: binary || !oldData ? '' : dec.decode(oldData), new: binary || !newData ? '' : dec.decode(newData), binary }
 }
 
-export async function writeIndex(ctx: Ctx, path: string, content: string) {
+const CHANGED = 'The file changed since this diff was loaded. Look at it again and retry.'
+
+const same = (bytes: Uint8Array | undefined, expected: string | undefined) => expected === undefined || new TextDecoder('utf-8', { ignoreBOM: true }).decode(bytes ?? new Uint8Array()) === expected
+
+export async function writeIndex(ctx: Ctx, path: string, content: string, expected?: string) {
+  if (!same(await stagedBlob(ctx, path), expected)) throw new Error(CHANGED)
   const oid = await git.writeBlob({ fs: ctx.fs, dir: ctx.dir, blob: new TextEncoder().encode(content) })
   const entry = await indexEntry(ctx, path)
   await git.updateIndex({ fs: ctx.fs, dir: ctx.dir, filepath: path, oid, mode: entry?.mode ?? 0o100644, add: true })
 }
 
-export async function writeWorkdir(ctx: Ctx, path: string, content: string) {
+export async function writeWorkdir(ctx: Ctx, path: string, content: string, expected?: string) {
+  if (!same(await workdirBytes(ctx, path), expected)) throw new Error(CHANGED)
   await (ctx.fs as { promises: { writeFile: Function } }).promises.writeFile(`${ctx.dir}/${path}`, content)
 }
 
@@ -488,8 +494,8 @@ export function localBackend(ctx: Ctx, settings: () => NetSettings): Backend {
     status: () => status(ctx),
     commitFiles: (oid) => commitFiles(ctx, oid),
     fileVersions: (area, path) => fileVersions(ctx, area, path),
-    writeIndex: (path, content) => writeIndex(ctx, path, content),
-    writeWorkdir: (path, content) => writeWorkdir(ctx, path, content),
+    writeIndex: (path, content, expected) => writeIndex(ctx, path, content, expected),
+    writeWorkdir: (path, content, expected) => writeWorkdir(ctx, path, content, expected),
     stage: (files) => stage(ctx, files),
     unstage: (paths) => unstage(ctx, paths),
     discard: (files) => discard(ctx, files),

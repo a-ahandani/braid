@@ -210,7 +210,7 @@ async function parentOf(dir, oid) {
 
 export async function commitFiles(dir, oid) {
   const parent = await parentOf(dir, oid)
-  const args = parent ? ['diff-tree', '-r', '-z', '-M', '--name-status', parent, oid] : ['diff-tree', '--root', '-r', '-z', '-M', '--name-status', oid]
+  const args = parent ? ['diff-tree', '-r', '-z', '-M', '--name-status', parent, oid] : ['diff-tree', '--root', '--no-commit-id', '-r', '-z', '-M', '--name-status', oid]
   const [{ stdout }, stats] = await Promise.all([run(dir, args), run(dir, args.map((a) => (a === '--name-status' ? '--numstat' : a)).filter((a) => a !== '-z'), { allowFail: true })])
   const parts = stdout.split(NUL)
   const out = []
@@ -264,8 +264,14 @@ export async function fileVersions(dir, area, path) {
   return { old: binary || !oldData ? '' : oldData.toString('utf8'), new: binary || !newData ? '' : newData.toString('utf8'), binary }
 }
 
-export async function writeIndex(dir, path, content) {
+const CHANGED = 'The file changed since this diff was loaded. Look at it again and retry.'
+
+export async function writeIndex(dir, path, content, expected) {
   safePaths([path])
+  if (expected !== undefined) {
+    const cur = await showBytes(dir, `:${path}`)
+    if ((cur && cur !== 'big' ? cur.toString('utf8') : '') !== expected) throw new Error(CHANGED)
+  }
   const oid = (await run(dir, ['hash-object', '-w', '--stdin', `--path=${path}`], { input: content })).stdout.trim()
   const entry = (await run(dir, ['ls-files', '-s', '--', path], { allowFail: true })).stdout.trim()
   const mode = entry ? entry.split(' ')[0] : '100644'
@@ -278,11 +284,27 @@ function insideRepo(dir, path) {
   return full
 }
 
-export async function writeWorkdir(dir, path, content) {
+export async function writeWorkdir(dir, path, content, expected) {
   safePaths([path])
   const full = insideRepo(dir, path)
   if (await lstat(full).then((s) => s.isSymbolicLink(), () => false)) throw new Error('That path is a symbolic link')
+  if (expected !== undefined && (await readFile(full).then((b) => b.toString('utf8'), () => '')) !== expected) throw new Error(CHANGED)
   await writeFile(full, content)
+}
+
+const PICKERS = {
+  darwin: ['osascript', ['-e', 'POSIX path of (choose folder with prompt "Open a repository")']],
+  win32: ['powershell', ['-NoProfile', '-Command', "Add-Type -AssemblyName System.Windows.Forms; $d = New-Object System.Windows.Forms.FolderBrowserDialog; if ($d.ShowDialog() -eq 'OK') { $d.SelectedPath }"]],
+}
+
+export function pickFolder() {
+  const [cmd, args] = PICKERS[process.platform] ?? ['zenity', ['--file-selection', '--directory', '--title=Open a repository']]
+  return new Promise((done, fail) =>
+    execFile(cmd, args, (err, stdout) => {
+      if (err?.code === 'ENOENT') fail(new Error('No folder picker is available here. Type the path instead.'))
+      else done(err ? null : stdout.trim() || null)
+    }),
+  )
 }
 
 export function openPath(dir, path) {

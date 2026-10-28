@@ -1,18 +1,11 @@
 import type { JSX } from 'preact'
-import { useMemo, useRef, useState } from 'preact/hooks'
-import type { FileVersions } from '../git/backend'
+import { useMemo, useState } from 'preact/hooks'
 import type { Commit, DiffArea, FileChange, RepoData } from '../git/repo'
-import { Avatar, ago, fmtDate, short } from './bits'
-import { DiffEditor, type ChunkAction, type DiffEditorHandle, type DiffMode } from './DiffEditor'
+import { Avatar, Icon, ago, fmtDate, short } from './bits'
 
 export interface FileSel {
   area: DiffArea
   path: string
-}
-
-export interface DiffOptions {
-  wrap: boolean
-  mode: DiffMode
 }
 
 export interface DetailProps {
@@ -22,18 +15,10 @@ export interface DetailProps {
   commitFiles: FileChange[]
   isStash: boolean
   selectedFile?: FileSel
-  versions?: FileVersions
-  diffOptions: DiffOptions
-  dark: boolean
-  chunkActions: ChunkAction[]
-  onSaveFile: (text: string) => void
-  dirty: boolean
-  onDirty: (dirty: boolean) => void
   tree: boolean
   summary: string
   description: string
   amend: boolean
-  onDiffOptions: (o: DiffOptions) => void
   onTree: (tree: boolean) => void
   onSummary: (s: string) => void
   onDescription: (s: string) => void
@@ -53,7 +38,7 @@ export interface DetailProps {
 }
 
 function kindColor(k: FileChange['kind']): string {
-  return k === 'A' || k === '?' ? 'var(--green)' : k === 'D' ? 'var(--red)' : 'var(--yellow)'
+  return k === 'A' ? 'var(--git-added)' : k === '?' ? 'var(--git-untracked)' : k === 'D' ? 'var(--git-deleted)' : 'var(--git-modified)'
 }
 
 function Stats({ f }: { f: FileChange }) {
@@ -80,13 +65,15 @@ function FileRow({ f, label, depth, selected, onClick, actions, onMenu }: { f: F
         onMenu(e)
       }}
     >
-      <span class="k" style={{ color: f.conflict ? 'var(--orange)' : kindColor(f.kind) }}>
-        {f.conflict ? '!' : f.kind === '?' ? 'A' : f.kind}
+      <span class="n" style={{ color: f.conflict ? 'var(--git-conflict)' : kindColor(f.kind) }}>
+        {label}
       </span>
-      <span class="n">{label}</span>
-      {dir && <span class="d">{dir}</span>}
-      <Stats f={f} />
+      {dir ? <span class="d">{dir}</span> : <span class="spacer" />}
       {actions && <span class="acts">{actions}</span>}
+      <Stats f={f} />
+      <span class="k" style={{ color: f.conflict ? 'var(--git-conflict)' : kindColor(f.kind) }} title={f.conflict ? 'Conflicted' : f.kind === '?' ? 'Untracked' : f.kind === 'A' ? 'Added' : f.kind === 'D' ? 'Deleted' : 'Modified'}>
+        {f.conflict ? '!' : f.kind === '?' ? 'U' : f.kind}
+      </span>
     </div>
   )
 }
@@ -150,7 +137,7 @@ function FileList(p: { files: FileChange[]; tree: boolean; isSelected: (f: FileC
           else next.add(d.path)
           return next
         })}>
-          <span class="k">{isClosed ? '▸' : '▾'}</span>
+          <Icon name={isClosed ? 'chevron-right' : 'chevron-down'} />
           <span class="n">{d.name}</span>
         </div>,
       )
@@ -164,61 +151,11 @@ function FileList(p: { files: FileChange[]; tree: boolean; isSelected: (f: FileC
   return <>{render(root!, 0)}</>
 }
 
-function Diff(p: { sel?: FileSel; versions?: FileVersions; options: DiffOptions; dark: boolean; dirty: boolean; actions: ChunkAction[]; onOptions: (o: DiffOptions) => void; onSave: (text: string) => void; onDirty: (dirty: boolean) => void }) {
-  const handle = useRef<DiffEditorHandle | undefined>(undefined)
-  if (!p.sel) return <div class="placeholder">Pick a file to see its diff</div>
-  if (!p.versions) return <div class="placeholder">Loading…</div>
-  const editable = p.sel.area.kind === 'unstaged'
-  return (
-    <div class="diff-wrap">
-      <div class="diff-bar">
-        <span class="path" title={p.sel.path}>
-          {p.sel.path}
-        </span>
-        <span class="spacer" />
-        {p.dirty && (
-          <button class="success" onClick={() => handle.current && p.onSave(handle.current.text())} title="Write your edits to the working tree">
-            Save
-          </button>
-        )}
-        <button class="ghost" title="Previous change" onClick={() => handle.current?.prev()}>
-          ↑
-        </button>
-        <button class="ghost" title="Next change" onClick={() => handle.current?.next()}>
-          ↓
-        </button>
-        <button class={`ghost ${p.options.mode === 'split' ? 'on' : ''}`} disabled={p.dirty} title={p.dirty ? 'Save or revert your edits first' : p.options.mode === 'split' ? 'Show inline' : 'Show side by side'} onClick={() => p.onOptions({ ...p.options, mode: p.options.mode === 'split' ? 'inline' : 'split' })}>
-          ⫼
-        </button>
-        <button class={`ghost ${p.options.wrap ? 'on' : ''}`} title="Wrap long lines" onClick={() => p.onOptions({ ...p.options, wrap: !p.options.wrap })}>
-          ⤶
-        </button>
-      </div>
-      {p.versions.binary ? (
-        <div class="placeholder">Binary or very large file</div>
-      ) : (
-        <DiffEditor
-          oldText={p.versions.old}
-          newText={p.versions.new}
-          filename={p.sel.path}
-          mode={p.options.mode}
-          dark={p.dark}
-          wrap={p.options.wrap}
-          editable={editable}
-          dirty={p.dirty}
-          actions={p.actions}
-          onDirty={p.onDirty}
-          handle={(h) => (handle.current = h)}
-        />
-      )}
-    </div>
-  )
-}
 
 export function DetailPanel(p: DetailProps) {
   const treeToggle = (
-    <button class="ghost small" title={p.tree ? 'Show as a flat list' : 'Show as a tree'} onClick={() => p.onTree(!p.tree)}>
-      {p.tree ? '☰' : '🌲'}
+    <button class="icon" title={p.tree ? 'Show as a flat list' : 'Show as a tree'} onClick={() => p.onTree(!p.tree)}>
+      <Icon name={p.tree ? 'list-flat' : 'list-tree'} />
     </button>
   )
   if (p.commit) {
@@ -250,16 +187,14 @@ export function DetailPanel(p: DetailProps) {
         </div>
         <div class="hr" />
         <div class="fhead">
-          {p.commitFiles.length} file change{p.commitFiles.length === 1 ? '' : 's'}
-          {p.isStash ? ' in stash' : ''}
+          {p.isStash ? 'Stash' : 'Changes'}
+          <span class="count">{p.commitFiles.length}</span>
           <span class="spacer" />
           {treeToggle}
         </div>
         <div class="files">
-          <FileList files={p.commitFiles} tree={p.tree} isSelected={(f) => p.selectedFile?.path === f.path} onPick={(f) => p.onSelectFile({ area: { kind: 'commit', oid: c.id }, path: f.path })} onMenu={(e, f) => p.onFileMenu(e, f, { kind: 'commit', oid: c.id })} />
+          <FileList files={p.commitFiles} tree={p.tree} isSelected={(f) => p.selectedFile?.area.kind === 'commit' && p.selectedFile.area.oid === c.id && p.selectedFile.path === f.path} onPick={(f) => p.onSelectFile({ area: { kind: 'commit', oid: c.id }, path: f.path })} onMenu={(e, f) => p.onFileMenu(e, f, { kind: 'commit', oid: c.id })} />
         </div>
-        <div class="hr" />
-        <Diff sel={p.selectedFile} versions={p.versions} options={p.diffOptions} dark={p.dark} dirty={p.dirty} actions={p.chunkActions} onOptions={p.onDiffOptions} onSave={p.onSaveFile} onDirty={p.onDirty} />
       </div>
     )
   }
@@ -295,43 +230,6 @@ export function DetailPanel(p: DetailProps) {
           )}
         </div>
       )}
-      <div class="files staging">
-        <div class="fhead">
-          Unstaged ({s.unstaged.length})
-          <span class="spacer" />
-          {treeToggle}
-          {s.unstaged.length > 0 && <button onClick={p.onStageAll}>Stage everything</button>}
-        </div>
-        <FileList
-          files={s.unstaged}
-          tree={p.tree}
-          isSelected={(f) => isSel('unstaged', f.path)}
-          onPick={(f) => p.onSelectFile({ area: { kind: 'unstaged' }, path: f.path })}
-          onMenu={(e, f) => p.onFileMenu(e, f, { kind: 'unstaged' })}
-          actions={(f) => (
-            <>
-              <button onClick={(e) => (e.stopPropagation(), p.onStage([f]))}>Stage</button>
-              <button onClick={(e) => (e.stopPropagation(), p.onDiscard([f]))}>Discard</button>
-            </>
-          )}
-        />
-        <div class="gap" />
-        <div class="fhead">
-          Staged ({s.staged.length})
-          <span class="spacer" />
-          {s.staged.length > 0 && <button onClick={p.onUnstageAll}>Unstage everything</button>}
-        </div>
-        <FileList
-          files={s.staged}
-          tree={p.tree}
-          isSelected={(f) => isSel('staged', f.path)}
-          onPick={(f) => p.onSelectFile({ area: { kind: 'staged' }, path: f.path })}
-          onMenu={(e, f) => p.onFileMenu(e, f, { kind: 'staged' })}
-          actions={(f) => <button onClick={(e) => (e.stopPropagation(), p.onUnstage([f.path]))}>Unstage</button>}
-        />
-      </div>
-      <div class="hr" />
-      <Diff sel={p.selectedFile} versions={p.versions} options={p.diffOptions} dark={p.dark} dirty={p.dirty} actions={p.chunkActions} onOptions={p.onDiffOptions} onSave={p.onSaveFile} onDirty={p.onDirty} />
       <div class="commit-box">
         {!p.data.headBranch && p.data.headOid && <div class="warn">Not on a branch (detached HEAD)</div>}
         <div class="label">Message</div>
@@ -343,10 +241,64 @@ export function DetailPanel(p: DetailProps) {
             <input type="checkbox" checked={p.amend} onChange={(e) => p.onAmend((e.target as HTMLInputElement).checked)} style={{ width: 'auto' }} /> Amend
           </label>
           <span class="right" />
-          <button class={canCommit ? 'success' : ''} disabled={!canCommit} onClick={p.onCommit} title="⌘⏎">
+          <button class="primary" disabled={!canCommit} onClick={p.onCommit} title="⌘⏎">
+            <Icon name="check" />
             {label}
           </button>
         </div>
+      </div>
+      <div class="files staging">
+        <div class="fhead">
+          Staged
+          <span class="count">{s.staged.length}</span>
+          <span class="spacer" />
+          {s.staged.length > 0 && (
+            <button class="icon" title="Unstage everything" onClick={p.onUnstageAll}>
+              <Icon name="remove" />
+            </button>
+          )}
+        </div>
+        <FileList
+          files={s.staged}
+          tree={p.tree}
+          isSelected={(f) => isSel('staged', f.path)}
+          onPick={(f) => p.onSelectFile({ area: { kind: 'staged' }, path: f.path })}
+          onMenu={(e, f) => p.onFileMenu(e, f, { kind: 'staged' })}
+          actions={(f) => (
+            <button title="Unstage" onClick={(e) => (e.stopPropagation(), p.onUnstage([f.path]))}>
+              <Icon name="remove" />
+            </button>
+          )}
+        />
+        <div class="gap" />
+        <div class="fhead">
+          Changes
+          <span class="count">{s.unstaged.length}</span>
+          <span class="spacer" />
+          {treeToggle}
+          {s.unstaged.length > 0 && (
+            <button class="icon" title="Stage everything" onClick={p.onStageAll}>
+              <Icon name="add" />
+            </button>
+          )}
+        </div>
+        <FileList
+          files={s.unstaged}
+          tree={p.tree}
+          isSelected={(f) => isSel('unstaged', f.path)}
+          onPick={(f) => p.onSelectFile({ area: { kind: 'unstaged' }, path: f.path })}
+          onMenu={(e, f) => p.onFileMenu(e, f, { kind: 'unstaged' })}
+          actions={(f) => (
+            <>
+              <button title="Discard changes" onClick={(e) => (e.stopPropagation(), p.onDiscard([f]))}>
+                <Icon name="discard" />
+              </button>
+              <button title="Stage" onClick={(e) => (e.stopPropagation(), p.onStage([f]))}>
+                <Icon name="add" />
+              </button>
+            </>
+          )}
+        />
       </div>
     </div>
   )

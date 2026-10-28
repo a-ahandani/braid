@@ -2,12 +2,12 @@ import type { JSX } from 'preact'
 import { useEffect, useRef, useState } from 'preact/hooks'
 import type { RowLayout } from '../git/graph'
 import type { BranchInfo, Commit, RefLabel } from '../git/repo'
-import { Avatar, ago, fmtDate, laneColor, short } from './bits'
+import { ago, Avatar, fmtDate, Icon, laneColor, short } from './bits'
 
-export const ROW_H = 26
-const COL_W = 20
+export const ROW_H = 30
+const COL_W = 24
 const GUTTER = 22
-const NODE_R = 9.5
+const NODE_R = 11
 const MERGE_R = 5.5
 
 export interface PillData {
@@ -123,8 +123,8 @@ function Lanes({ lay, kind, author, email, drawEdges }: { lay: RowLayout; kind: 
   else if (kind === 'stash')
     node = (
       <g>
-        <rect x={nx - 7} y={mid - 7} width={14} height={14} rx={2} fill="var(--app-bg)" stroke={color} stroke-width={2} />
-        <text x={nx} y={mid + 4} text-anchor="middle" font-size={11} fill={color}>
+        <rect x={nx - 8} y={mid - 8} width={16} height={16} rx={3} fill="var(--app-bg)" stroke={color} stroke-width={2} />
+        <text x={nx} y={mid + 4} text-anchor="middle" font-size={12} fill={color}>
           ≡
         </text>
       </g>
@@ -133,7 +133,7 @@ function Lanes({ lay, kind, author, email, drawEdges }: { lay: RowLayout; kind: 
     node = (
       <g>
         <circle cx={nx} cy={mid} r={NODE_R} fill="var(--app-bg)" stroke={color} stroke-width={2} stroke-dasharray="3 2.5" />
-        <circle cx={nx} cy={mid} r={3} fill={color} />
+        <circle cx={nx} cy={mid} r={4} fill={color} />
       </g>
     )
   else node = <circle cx={nx} cy={mid} r={NODE_R} fill="var(--app-bg)" stroke={color} stroke-width={2} />
@@ -144,8 +144,8 @@ function Lanes({ lay, kind, author, email, drawEdges }: { lay: RowLayout; kind: 
         {node}
       </svg>
       {kind === 'commit' && (
-        <span style={{ position: 'absolute', left: `${nx - 7.5}px`, top: `${mid - 7.5}px` }}>
-          <Avatar name={author} email={email} color={color} size={15} />
+        <span style={{ position: 'absolute', left: `${nx - 9}px`, top: `${mid - 9}px` }}>
+          <Avatar name={author} email={email} color={color} size={18} />
         </span>
       )}
     </div>
@@ -163,20 +163,21 @@ export function Pill({ pill, color, onDoubleClick, onPointerDown }: { pill: Pill
   return (
     <span
       class={`pill ${pill.current ? 'current' : ''}`}
-      style={{ background: bg, outline: pill.current ? `1px solid ${color}` : undefined }}
+      style={{ background: bg, color, outline: pill.current ? `1px solid ${color}` : undefined }}
       title={`${pill.name}\n${parts.join('\n')}`}
       onDblClick={onDoubleClick}
       data-draggable={draggable ? '1' : undefined}
       onPointerDown={(e) => draggable && e.button === 0 && onPointerDown?.(e)}
     >
-      {pill.local && <span class="ic head" style={{ background: color }} />}
-      {pill.remote && <span class="ic remote" style={{ color }} />}
-      {pill.tag && <span class="ic tag" style={{ background: color }} />}
+      {pill.current && <Icon name="target" />}
+      {pill.local && !pill.current && <Icon name="git-branch" />}
+      {pill.remote && <Icon name="cloud" />}
+      {pill.tag && <Icon name="tag" />}
       {pill.name}
       {!!(pill.ahead || pill.behind) && (
         <span class="track">
-          {pill.ahead ? `↑${pill.ahead}` : ''}
-          {pill.behind ? `↓${pill.behind}` : ''}
+          {pill.ahead ? <><Icon name="arrow-small-up" />{pill.ahead}</> : null}
+          {pill.behind ? <><Icon name="arrow-small-down" />{pill.behind}</> : null}
         </span>
       )}
     </span>
@@ -279,7 +280,7 @@ export function GraphView(p: GraphProps) {
         </div>
         <Lanes lay={lay} kind={c.kind} author={c.author} email={c.email} drawEdges={p.showEdges} />
         <div class={`msg ${c.kind}`}>{c.kind === 'wip' ? `Uncommitted changes · ${p.wipCount} file${p.wipCount === 1 ? '' : 's'}` : c.summary}</div>
-        <div class="author">{c.kind !== 'wip' && <Avatar name={c.author} email={c.email} color={color} />}</div>
+        <div class="author">{c.kind !== 'wip' && <Avatar name={c.author} email={c.email} color={color} size={24} />}</div>
         <div class="date" title={c.kind !== 'wip' ? fmtDate(c.time) : undefined}>
           {c.kind !== 'wip' && ago(c.time)}
         </div>

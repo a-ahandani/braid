@@ -3,7 +3,7 @@ import * as os from 'node:os'
 import * as path from 'node:path'
 import git from 'isomorphic-git'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { commit, commitFiles, createTag, discard, fileVersions, load, stage, status, unstage, writeIndex, type Ctx } from './repo'
+import { commit, commitFiles, createTag, discard, fileVersions, load, stage, status, unstage, writeIndex, writeWorkdir, type Ctx } from './repo'
 
 let dir: string
 let ctx: Ctx
@@ -45,6 +45,19 @@ describe('repo', () => {
     expect(await fileVersions(ctx, { kind: 'staged' }, 'a.txt')).toMatchObject({ old: 'hello\nworld\n', new: 'hello\nworld\npartial\n' })
     expect(await fileVersions(ctx, { kind: 'unstaged' }, 'a.txt')).toMatchObject({ old: 'hello\nworld\npartial\n', new: 'hello\nworld\nagain\n' })
     expect((await status(ctx)).staged).toEqual([{ path: 'a.txt', kind: 'M' }])
+  })
+
+  it('keeps a byte order mark and refuses stale writes', async () => {
+    fs.writeFileSync(path.join(dir, 'b.txt'), '\uFEFFone\r\ntwo\r\n')
+    await stage(ctx, (await status(ctx)).unstaged)
+    await commit(ctx, 'bom', false)
+    fs.writeFileSync(path.join(dir, 'b.txt'), '\uFEFFONE\r\ntwo\r\n')
+    const v = await fileVersions(ctx, { kind: 'unstaged' }, 'b.txt')
+    expect(v.old).toBe('\uFEFFone\r\ntwo\r\n')
+    await expect(writeIndex(ctx, 'b.txt', v.new, 'stale')).rejects.toThrow(/changed since/)
+    await writeIndex(ctx, 'b.txt', v.new, v.old)
+    expect((await fileVersions(ctx, { kind: 'staged' }, 'b.txt')).new).toBe('\uFEFFONE\r\ntwo\r\n')
+    await expect(writeWorkdir(ctx, 'b.txt', 'x', 'stale')).rejects.toThrow(/changed since/)
   })
 
   it('puts an annotated tag on its commit without adding a row', async () => {

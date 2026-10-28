@@ -2,6 +2,10 @@ import { useEffect, useState } from 'preact/hooks'
 
 export const LANES = 10
 
+export function Icon({ name }: { name: string }) {
+  return <i class={`codicon codicon-${name}`} aria-hidden="true" />
+}
+
 export function laneColor(col: number): string {
   return `var(--lane-${col % LANES})`
 }

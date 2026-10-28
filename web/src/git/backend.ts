@@ -17,8 +17,8 @@ export interface Backend {
   status(): Promise<WorkStatus>
   commitFiles(oid: string): Promise<FileChange[]>
   fileVersions(area: DiffArea, path: string): Promise<FileVersions>
-  writeIndex(path: string, content: string): Promise<void>
-  writeWorkdir(path: string, content: string): Promise<void>
+  writeIndex(path: string, content: string, expected?: string): Promise<void>
+  writeWorkdir(path: string, content: string, expected?: string): Promise<void>
   stage(files: FileChange[]): Promise<void>
   unstage(paths: string[]): Promise<void>
   discard(files: FileChange[]): Promise<void>

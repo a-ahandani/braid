@@ -24,7 +24,7 @@ export function fuzzyScore(query: string, text: string): number {
   return score
 }
 
-export function Palette({ commands, onClose }: { commands: Command[]; onClose: () => void }) {
+export function Palette({ commands, onClose, placeholder = 'Type a command, a branch, or a file', extra }: { commands: Command[]; onClose: () => void; placeholder?: string; extra?: (query: string) => Command[] }) {
   const [query, setQuery] = useState('')
   const [cursor, setCursor] = useState(0)
   const input = useRef<HTMLInputElement>(null)
@@ -32,8 +32,8 @@ export function Palette({ commands, onClose }: { commands: Command[]; onClose: (
   const matches = useMemo(() => {
     const scored = commands.map((c) => ({ c, s: fuzzyScore(query, `${c.group} ${c.label}`) })).filter((x) => x.s > 0)
     scored.sort((a, b) => b.s - a.s)
-    return scored.slice(0, 40).map((x) => x.c)
-  }, [commands, query])
+    return [...(extra?.(query) ?? []), ...scored.slice(0, 40).map((x) => x.c)]
+  }, [commands, query, extra])
   useEffect(() => setCursor(0), [query])
   const pick = (c: Command) => {
     onClose()
@@ -44,7 +44,7 @@ export function Palette({ commands, onClose }: { commands: Command[]; onClose: (
       <div class="palette">
         <input
           ref={input}
-          placeholder="Type a command, a branch, or a file"
+          placeholder={placeholder}
           value={query}
           onInput={(e) => setQuery((e.target as HTMLInputElement).value)}
           onKeyDown={(e) => {
@@ -57,7 +57,10 @@ export function Palette({ commands, onClose }: { commands: Command[]; onClose: (
             } else if (e.key === 'Enter' && matches[cursor]) {
               e.preventDefault()
               pick(matches[cursor])
-            } else if (e.key === 'Escape') onClose()
+            } else if (e.key === 'Escape') {
+              e.stopPropagation()
+              onClose()
+            }
           }}
         />
         <div class="list">

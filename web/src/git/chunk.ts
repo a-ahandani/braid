@@ -1,14 +1,21 @@
-import type { Text } from '@codemirror/state'
-
-export interface ChunkRange {
-  fromA: number
-  toA: number
-  fromB: number
-  toB: number
+export interface LineChange {
+  originalStartLineNumber: number
+  originalEndLineNumber: number
+  modifiedStartLineNumber: number
+  modifiedEndLineNumber: number
 }
 
-export function applyChunk(a: Text, b: Text, c: ChunkRange, into: 'a' | 'b', sep: string): string {
-  return into === 'a'
-    ? a.sliceString(0, c.fromA, sep) + b.sliceString(c.fromB, c.toB, sep) + a.sliceString(c.toA, a.length, sep)
-    : b.sliceString(0, c.fromB, sep) + a.sliceString(c.fromA, c.toA, sep) + b.sliceString(c.toB, b.length, sep)
+const span = (start: number, end: number): [number, number] => (end === 0 ? [start, start] : [start - 1, end])
+
+export function applyChange(a: string[], b: string[], c: LineChange, into: 'a' | 'b', eol: string): string {
+  const [af, at] = span(c.originalStartLineNumber, c.originalEndLineNumber)
+  const [bf, bt] = span(c.modifiedStartLineNumber, c.modifiedEndLineNumber)
+  const lines = into === 'a' ? [...a.slice(0, af), ...b.slice(bf, bt), ...a.slice(at)] : [...b.slice(0, bf), ...a.slice(af, at), ...b.slice(bt)]
+  return lines.join(eol)
 }
+
+const BOM = '﻿'
+
+export const withBom = (raw: string, text: string) => (raw.startsWith(BOM) && !text.startsWith(BOM) ? BOM + text : text)
+
+export const mixedEol = (text: string) => /\r(?!\n)/.test(text) || (/\r\n/.test(text) && /(?<!\r)\n/.test(text))

@@ -13,6 +13,12 @@ cd "$(dirname "$0")/.."
   echo "- Noto Emoji: SIL Open Font License 1.1, Google"
   echo "- emoji-icon-font: MIT License, John Slegers"
   echo
+  echo "## Browser UI (npm helper and hosted page)"
+  echo
+  echo "- Codicons: icons under CC BY 4.0, code under the MIT License, Microsoft Corporation"
+  echo "- Monaco Editor: MIT License, Microsoft Corporation, which bundles marked (MIT License, Christopher Jeffrey and contributors)"
+  echo "- DOMPurify: Apache License 2.0 or Mozilla Public License 2.0, Cure53 and contributors"
+  echo
   echo "## Native library"
   echo
   echo "- libgit2: GNU GPL v2 with linking exception, the libgit2 contributors"

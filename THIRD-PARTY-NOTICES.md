@@ -9,6 +9,12 @@ This application statically links the Rust crates below. Each is used under the 
 - Noto Emoji: SIL Open Font License 1.1, Google
 - emoji-icon-font: MIT License, John Slegers
 
+## Browser UI (npm helper and hosted page)
+
+- Codicons: icons under CC BY 4.0, code under the MIT License, Microsoft Corporation
+- Monaco Editor: MIT License, Microsoft Corporation, which bundles marked (MIT License, Christopher Jeffrey and contributors)
+- DOMPurify: Apache License 2.0 or Mozilla Public License 2.0, Cure53 and contributors
+
 ## Native library
 
 - libgit2: GNU GPL v2 with linking exception, the libgit2 contributors

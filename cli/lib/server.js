@@ -1,6 +1,8 @@
 import { createReadStream, existsSync, statSync, watch } from 'node:fs'
+import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import http from 'node:http'
-import { extname, join, normalize } from 'node:path'
+import { homedir } from 'node:os'
+import { basename, dirname, extname, join, normalize, resolve } from 'node:path'
 import * as git from './git.js'
 
 const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.png': 'image/png', '.json': 'application/json' }
@@ -10,8 +12,8 @@ const OPS = {
   status: (dir) => git.status(dir),
   commitFiles: (dir, b) => git.commitFiles(dir, b.oid),
   fileVersions: (dir, b) => git.fileVersions(dir, b.area, b.path),
-  writeIndex: (dir, b) => git.writeIndex(dir, b.path, b.content),
-  writeWorkdir: (dir, b) => git.writeWorkdir(dir, b.path, b.content),
+  writeIndex: (dir, b) => git.writeIndex(dir, b.path, b.content, b.expected),
+  writeWorkdir: (dir, b) => git.writeWorkdir(dir, b.path, b.content, b.expected),
   openPath: (dir, b) => git.openPath(dir, b.path),
   stage: (dir, b) => git.stage(dir, b.paths),
   unstage: (dir, b) => git.unstage(dir, b.paths),
@@ -60,23 +62,49 @@ function sendJson(res, status, data) {
   res.end(JSON.stringify(data ?? null))
 }
 
-export function createServer({ dir, uiDir, token }) {
+const STATE = join(process.env.XDG_CONFIG_HOME || join(homedir(), '.config'), 'ramulus', 'recent.json')
+
+function watchRepo(dir) {
   const clients = new Set()
   let timer
-  const notify = () => {
-    clearTimeout(timer)
-    timer = setTimeout(() => {
-      for (const res of clients) res.write('data: changed\n\n')
-    }, 400)
-  }
+  let watcher
   try {
-    watch(dir, { recursive: true }, (_, file) => {
+    watcher = watch(dir, { recursive: true }, (_, file) => {
       const f = (file ?? '').toString().replaceAll('\\', '/')
       if (f.includes('.git/objects') || f.endsWith('.lock') || f.includes('node_modules')) return
-      notify()
+      clearTimeout(timer)
+      timer = setTimeout(() => {
+        for (const res of clients) res.write('data: changed\n\n')
+      }, 400)
     })
   } catch {
-    /* recursive watching is unavailable on this platform; the UI still has a refresh button */
+    watcher = undefined
+  }
+  return { clients, close: () => (clearTimeout(timer), watcher?.close()) }
+}
+
+export function createServer({ dir, uiDir, token, stateFile = STATE }) {
+  const known = new Set([dir])
+  const watchers = new Map()
+  const readRecent = () => readFile(stateFile, 'utf8').then(JSON.parse, () => [])
+  const remember = async (repo) => {
+    const list = [repo, ...(await readRecent()).filter((d) => d !== repo)].slice(0, 12)
+    await mkdir(dirname(stateFile), { recursive: true })
+    await writeFile(stateFile, JSON.stringify(list))
+  }
+  remember(dir).catch(() => {})
+  const info = (repo) => ({ dir: repo, name: basename(repo) })
+  const SHELL = {
+    repos: async () => ({ current: info(dir), recent: (await readRecent()).filter((d) => existsSync(d)).map(info) }),
+    pickFolder: () => git.pickFolder(),
+    openRepo: async (b) => {
+      const path = resolve(dir, String(b.path ?? '').trim().replace(/^~(?=$|[/\\])/, homedir()))
+      if (!existsSync(path) || !statSync(path).isDirectory()) throw new Error('That folder does not exist')
+      const top = await git.toplevel(path)
+      known.add(top)
+      await remember(top).catch(() => {})
+      return info(top)
+    },
   }
 
   const server = http.createServer(async (req, res) => {
@@ -87,14 +115,23 @@ export function createServer({ dir, uiDir, token }) {
     }
     const url = new URL(req.url, 'http://localhost')
     if (url.pathname === '/api/events') {
-      if (url.searchParams.get('token') !== token) {
+      const repo = url.searchParams.get('repo') || dir
+      if (url.searchParams.get('token') !== token || !known.has(repo)) {
         res.writeHead(401).end()
         return
       }
       res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-store', connection: 'keep-alive' })
       res.write(': connected\n\n')
-      clients.add(res)
-      req.on('close', () => clients.delete(res))
+      let w = watchers.get(repo)
+      if (!w) watchers.set(repo, (w = watchRepo(repo)))
+      w.clients.add(res)
+      req.on('close', () => {
+        w.clients.delete(res)
+        if (w.clients.size === 0 && watchers.get(repo) === w) {
+          w.close()
+          watchers.delete(repo)
+        }
+      })
       return
     }
     if (url.pathname.startsWith('/api/')) {
@@ -102,14 +139,18 @@ export function createServer({ dir, uiDir, token }) {
         sendJson(res, 401, { error: 'bad token' })
         return
       }
-      const op = OPS[url.pathname.slice(5)]
-      if (!op || req.method !== 'POST') {
+      const name = url.pathname.slice(5)
+      const shell = Object.hasOwn(SHELL, name) ? SHELL[name] : undefined
+      const op = Object.hasOwn(OPS, name) ? OPS[name] : undefined
+      if ((!op && !shell) || req.method !== 'POST') {
         sendJson(res, 404, { error: 'unknown operation' })
         return
       }
       try {
         const body = await readBody(req)
-        sendJson(res, 200, { result: (await op(dir, body)) ?? null })
+        const repo = body.repo ?? dir
+        if (!shell && !known.has(repo)) throw new Error('Open that repository first')
+        sendJson(res, 200, { result: (await (shell ? shell(body) : op(repo, body))) ?? null })
       } catch (e) {
         sendJson(res, 400, { error: e instanceof Error ? e.message : String(e) })
       }

@@ -1,17 +1,32 @@
 import type { Backend } from './backend'
 import type { RefLabel, RepoData } from './repo'
 
-export function httpBackend(base: string, token: string): Backend {
-  const call = async <T>(op: string, body: object = {}): Promise<T> => {
-    const res = await fetch(`${base}/api/${op}`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', 'x-ramulus-token': token },
-      body: JSON.stringify(body),
-    })
-    const data = await res.json().catch(() => ({ error: `${res.status} ${res.statusText}` }))
-    if (!res.ok || data.error) throw new Error(data.error ?? 'Request failed')
-    return data.result as T
+async function post<T>(base: string, token: string, op: string, body: object): Promise<T> {
+  const res = await fetch(`${base}/api/${op}`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-ramulus-token': token },
+    body: JSON.stringify(body),
+  })
+  const data = await res.json().catch(() => ({ error: `${res.status} ${res.statusText}` }))
+  if (!res.ok || data.error) throw new Error(data.error ?? 'Request failed')
+  return data.result as T
+}
+
+export interface RepoInfo {
+  dir: string
+  name: string
+}
+
+export function helperShell(base: string, token: string) {
+  return {
+    repos: () => post<{ current: RepoInfo; recent: RepoInfo[] }>(base, token, 'repos', {}),
+    openRepo: (path: string) => post<RepoInfo>(base, token, 'openRepo', { path }),
+    pickFolder: () => post<string | null>(base, token, 'pickFolder', {}),
   }
+}
+
+export function httpBackend(base: string, token: string, repo?: string): Backend {
+  const call = <T>(op: string, body: object = {}): Promise<T> => post<T>(base, token, op, { ...body, repo })
   return {
     native: true,
     load: async (limit) => {
@@ -21,8 +36,8 @@ export function httpBackend(base: string, token: string): Backend {
     status: () => call('status'),
     commitFiles: (oid) => call('commitFiles', { oid }),
     fileVersions: (area, path) => call('fileVersions', { area, path }),
-    writeIndex: (path, content) => call('writeIndex', { path, content }),
-    writeWorkdir: (path, content) => call('writeWorkdir', { path, content }),
+    writeIndex: (path, content, expected) => call('writeIndex', { path, content, expected }),
+    writeWorkdir: (path, content, expected) => call('writeWorkdir', { path, content, expected }),
     openPath: (path) => call('openPath', { path }),
     stage: (files) => call('stage', { paths: files.map((f) => f.path) }),
     unstage: (paths) => call('unstage', { paths }),
@@ -50,7 +65,7 @@ export function httpBackend(base: string, token: string): Backend {
     abort: () => call('abort'),
     continueOp: () => call('continue'),
     subscribe: (onChange) => {
-      const es = new EventSource(`${base}/api/events?token=${token}`)
+      const es = new EventSource(`${base}/api/events?token=${token}${repo ? `&repo=${encodeURIComponent(repo)}` : ''}`)
       es.onmessage = () => onChange()
       return () => es.close()
     },
