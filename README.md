@@ -109,6 +109,8 @@ cargo test
 
 `npm run dev` serves this repository by default; set `RAMULUS_REPO=/path/to/repo` for another one. Discard and Save write real files, so point it at a scratch clone when trying those. Design decisions are written down in `docs/ux.md`.
 
+To release the npm helper, run `npm version patch --no-git-tag-version` in `cli/`, push that to main, then push a matching tag such as `cli-v0.5.1`. The Publish workflow runs the tests on Linux, macOS and Windows, then publishes to npm through trusted publishing, with provenance and no stored token.
+
 ## License
 
 MIT. Bundled third-party components and their licenses are listed in `THIRD-PARTY-NOTICES.md`.

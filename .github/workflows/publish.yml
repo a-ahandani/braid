@@ -1,0 +1,29 @@
+name: Publish
+on:
+  push:
+    tags: ['cli-v*']
+permissions:
+  contents: read
+jobs:
+  test:
+    uses: ./.github/workflows/cli.yml
+  publish:
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+      - run: npm install -g npm@12
+      - run: test "cli-v$(node -p "require('./cli/package.json').version")" = "$GITHUB_REF_NAME"
+      - run: npm ci
+        working-directory: web
+      - run: npm ci
+        working-directory: cli
+      - run: npm publish --access public
+        working-directory: cli

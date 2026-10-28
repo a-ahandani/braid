@@ -5,6 +5,7 @@ on:
     paths: ['cli/**', 'web/**', '.github/workflows/cli.yml']
   pull_request:
     paths: ['cli/**', 'web/**']
+  workflow_call:
 jobs:
   test:
     runs-on: ${{ matrix.os }}
