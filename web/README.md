@@ -9,7 +9,7 @@ The same client, running entirely in a browser tab: git is reimplemented in Java
 
 ```sh
 npm install
-npm run dev      # http://localhost:5173
+npm run dev      # serves the UI over the npm helper; open it without the #token for the in-browser engine
 npm test
 npm run build    # static site in dist/
 ```

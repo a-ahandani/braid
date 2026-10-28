@@ -1,11 +1,13 @@
 # Ramulus
 
-Every branch of your repository, in one graph. Ramulus starts a small local server on top of the `git` you already have and opens the UI in your browser.
+A local-first Git GUI. Every branch in one graph, editor-grade diffs, and your repositories in tabs. No account, no cloud, no telemetry.
 
 ```sh
 npx ramulus            # in a repository
 npx ramulus ~/code/app # or point it at one
 ```
+
+![The Ramulus branch graph](https://raw.githubusercontent.com/a-ahandani/ramulus/main/docs/screenshots/overview.png)
 
 Options: `--port N` to pick a port, `--no-open` to only print the URL.
 
@@ -13,6 +15,7 @@ Options: `--port N` to pick a port, `--no-open` to only print the URL.
 - Everything runs through your installed git, so SSH keys, credential helpers, hooks and LFS behave exactly as on the command line.
 - The server listens on 127.0.0.1 only and every request carries a per-run token, so other pages and other machines cannot reach your repository.
 - Commit graph with lanes, branches, tags, stashes, staging with diffs, commit and amend, merge, rebase, cherry-pick, revert, reset, fetch, pull, push, and a banner with Continue and Abort when a merge or rebase stops on conflicts.
-- A CodeMirror diff editor with syntax highlighting, inline or side-by-side layout, an editable working-tree side with Save, and block-level stage, unstage and discard; drag a branch label onto a commit to merge or rebase; solo branches; command palette (⌘⇧P); shortcuts list (?); tree or flat file lists with +/− counts; resizable panels; status bar; light and dark themes.
+- Open several repositories side by side in tabs, from recent repositories, the system folder picker or a typed path.
+- A movable, resizable diff window on Monaco where every opened file is a tab, with side-by-side or inline layout, hidden-region folds, an editable working-tree side saved with ⌘S, and block-level stage, unstage and discard; drag a branch label onto a commit to merge or rebase; solo branches; command palette (⌘⇧P); shortcuts list (?); tree or flat file lists with +/− counts; resizable panels; status bar; light and dark themes.
 
 Source and the native desktop app: https://github.com/a-ahandani/ramulus
