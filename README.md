@@ -15,7 +15,7 @@ No account, no cloud services, no telemetry. MIT licensed; see THIRD-PARTY-NOTIC
 - Author avatars from Gravatar (an MD5 of each author email is sent to gravatar.com; initials are shown when there is no photo)
 - Keyboard: `⌘O` open, `⌘L` fetch, `⌘B` branch, `⌘F` find commit, `⌘⏎` commit, `⌘⇧S` stage all, `⌘⇧U` unstage all, `⌘J`/`⌘K` toggle panels, `↑`/`↓` move selection
 
-The browser UI (used by `npx ramulus` and the hosted page) adds hunk-level staging, diff line numbers with whitespace and wrap toggles, drag a branch label onto a commit to merge or rebase, solo branches, a command palette (`⌘⇧P`), a shortcuts list (`?`), tree or flat file lists with per-file counts, resizable panels, a status bar and a light theme. Design notes live in `docs/ux.md`.
+The browser UI (used by `npx ramulus` and the hosted page) adds a CodeMirror diff editor (syntax highlighting, inline or side-by-side, editable with Save) with block-level stage, unstage and discard, drag a branch label onto a commit to merge or rebase, solo branches, a command palette (`⌘⇧P`), a shortcuts list (`?`), tree or flat file lists with per-file counts, resizable panels, a status bar and a light theme. Design notes live in `docs/ux.md`.
 
 ## Run it from npm, on any OS
 

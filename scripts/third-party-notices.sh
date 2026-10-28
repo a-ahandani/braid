@@ -34,5 +34,6 @@ for p in sorted(m["packages"], key=lambda p: p["name"]):
     seen.add(key)
     print("- %s %s: %s" % (p["name"], p["version"], p.get("license") or "see repository"))
 '
-} > THIRD-PARTY-NOTICES.md
+} > THIRD-PARTY-NOTICES.md.tmp
+mv THIRD-PARTY-NOTICES.md.tmp THIRD-PARTY-NOTICES.md
 echo "Wrote THIRD-PARTY-NOTICES.md"

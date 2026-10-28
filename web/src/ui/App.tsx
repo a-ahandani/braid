@@ -1,13 +1,14 @@
 import { get, set } from 'idb-keyval'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'preact/hooks'
 import { FsaFs } from '../fs/fsa'
-import type { Backend, HunkOp, PullMode } from '../git/backend'
+import type { Backend, FileVersions, PullMode } from '../git/backend'
 import { demoRepo } from '../git/demo'
 import { layout, type RowLayout } from '../git/graph'
 import { httpBackend } from '../git/remote'
-import { localBackend, PAGE, type Commit, type Ctx, type DiffArea, type DiffLine, type FileChange, type NetSettings, type RepoData } from '../git/repo'
+import { localBackend, PAGE, type Commit, type Ctx, type DiffArea, type FileChange, type NetSettings, type RepoData } from '../git/repo'
 import { laneColor, short } from './bits'
 import { DetailPanel, type DiffOptions, type FileSel } from './DetailPanel'
+import type { ChunkAction } from './DiffEditor'
 import { Dialogs, type Dialog } from './Dialogs'
 import { GraphView, type DropInfo, type PillData } from './GraphView'
 import { LeftPanel } from './LeftPanel'
@@ -76,8 +77,14 @@ export function App() {
   const [sel, setSel] = useState<Sel>()
   const [fileSel, setFileSel] = useState<FileSel>()
   const [commitFiles, setCommitFiles] = useState<FileChange[]>([])
-  const [diff, setDiff] = useState<DiffLine[]>([])
-  const [diffOptions, setDiffOptions] = useState<DiffOptions>({ wrap: false, ignoreWs: false })
+  const [versions, setVersions] = useState<FileVersions>()
+  const [dirty, setDirty] = useState(false)
+  const [diffOptions, setDiffOptionsState] = useState<DiffOptions>(() => ({ wrap: stored('ramulus.wrap') === '1', mode: stored('ramulus.diff') === 'split' ? 'split' : 'inline' }))
+  const setDiffOptions = (o: DiffOptions) => {
+    setDiffOptionsState(o)
+    localStorage.setItem('ramulus.wrap', o.wrap ? '1' : '0')
+    localStorage.setItem('ramulus.diff', o.mode)
+  }
   const [tree, setTreeState] = useState(() => stored('ramulus.tree') === '1')
   const [summary, setSummary] = useState('')
   const [description, setDescription] = useState('')
@@ -244,19 +251,21 @@ export function App() {
   }, [view, sel])
 
   useEffect(() => {
-    if (!view || !fileSel) {
-      setDiff([])
-      return
-    }
+    setVersions(undefined)
+    setDirty(false)
+  }, [fileSel])
+
+  useEffect(() => {
+    if (!view || !fileSel || dirty) return
     let live = true
     view.be
-      .diffLines(fileSel.area, fileSel.path, diffOptions.ignoreWs)
-      .then((d) => live && setDiff(d))
-      .catch(() => live && setDiff([]))
+      .fileVersions(fileSel.area, fileSel.path)
+      .then((v) => live && setVersions(v))
+      .catch(() => live && setVersions({ old: '', new: '', binary: true }))
     return () => {
       live = false
     }
-  }, [view, fileSel, diffOptions.ignoreWs])
+  }, [view, fileSel, dirty])
 
   useEffect(() => {
     if (!view || !fileSel) return
@@ -496,12 +505,28 @@ export function App() {
     confirm(what, () => run('Discarding', () => v.be.discard(files), { statusOnly: true }))
   }
 
-  const applyHunk = (area: DiffArea, path: string, hunkIdx: number, op: HunkOp) => {
-    const v = view!
-    if (!v.be.applyHunk) return
-    const go = () => run(op === 'stage' ? 'Staging hunk' : op === 'unstage' ? 'Unstaging hunk' : 'Discarding hunk', () => v.be.applyHunk!(area, path, hunkIdx, op), { statusOnly: true })
-    if (op === 'discard') confirm(`This hunk of "${path}" will be reverted in the working tree. Continue?`, go)
-    else go()
+  const chunkActions: ChunkAction[] = (() => {
+    const v = view
+    const f = fileSel
+    if (!v || !f || f.area.kind === 'commit') return []
+    const list = f.area.kind === 'staged' ? v.data.status.staged : v.data.status.unstaged
+    if (list.find((x) => x.path === f.path)?.kind !== 'M') return []
+    if (f.area.kind === 'staged') return [{ label: 'Unstage', into: 'b', run: (t) => run('Unstaging chunk', () => v.be.writeIndex(f.path, t), { statusOnly: true }) }]
+    return [
+      { label: 'Stage', into: 'a', run: (t) => run('Staging chunk', () => v.be.writeIndex(f.path, t), { statusOnly: true }) },
+      {
+        label: 'Discard',
+        danger: true,
+        into: 'b',
+        run: (t) => confirm(`This change in "${f.path}" will be reverted in the working tree. Continue?`, () => run('Discarding chunk', () => v.be.writeWorkdir(f.path, t), { statusOnly: true })),
+      },
+    ]
+  })()
+  const saveFile = (text: string) => {
+    const v = view
+    const f = fileSel
+    if (!v || !f) return
+    run('Saving', () => v.be.writeWorkdir(f.path, text), { statusOnly: true, after: () => setDirty(false) })
   }
 
   const pillDoubleClick = (pill: PillData) => {
@@ -624,7 +649,7 @@ export function App() {
 
   const statusBar = (v?: View) => {
     const cur = v?.data.local.find((b) => b.isHead)
-    const changes = v ? v.data.status.staged.length + v.data.status.unstaged.length : 0
+    const changes = v ? new Set([...v.data.status.staged, ...v.data.status.unstaged].map((f) => f.path)).size : 0
     return (
       <div class="statusbar">
         {v && (
@@ -720,7 +745,6 @@ export function App() {
   const layoutOf = (i: number) => soloInfo?.layoutByIndex.get(i) ?? v.layout[i]
   const currentColor = current ? laneColor(layoutOf(v.indexOf.get(current.id)!).column) : 'var(--lane-0)'
   const wipCount = new Set([...v.data.status.staged, ...v.data.status.unstaged].map((f) => f.path)).size
-  const dirty = wipCount > 0
   const net = (label: string, fn: () => Promise<unknown>) => run(label, fn, { after: () => setToast(`${label} done`) })
 
   return (
@@ -748,7 +772,7 @@ export function App() {
         <button disabled={!!busy || !v.data.headOid} onClick={() => setDialog({ kind: 'branch', at: v.data.headOid! })} title="New branch (⌘B)">
           Branch
         </button>
-        <button disabled={!!busy || !dirty} onClick={() => setDialog({ kind: 'stash' })} title="Stash everything">
+        <button disabled={!!busy || wipCount === 0} onClick={() => setDialog({ kind: 'stash' })} title="Stash everything">
           Stash
         </button>
         <button disabled={!!busy || v.data.stashes.length === 0} onClick={() => run('Applying stash', () => v.be.stashApply(0, true))} title="Apply and drop the newest stash">
@@ -822,9 +846,13 @@ export function App() {
           commitFiles={commitFiles}
           isStash={!!current && v.data.stashes.some((s) => s.oid === current.id)}
           selectedFile={fileSel}
-          diff={diff}
+          versions={versions}
           diffOptions={diffOptions}
-          native={v.be.native}
+          dark={theme === 'dark'}
+          chunkActions={chunkActions}
+          onSaveFile={saveFile}
+          dirty={dirty}
+          onDirty={setDirty}
           tree={tree}
           summary={summary}
           description={description}
@@ -840,7 +868,6 @@ export function App() {
           onDiscard={discardFiles}
           onStageAll={() => run('Staging', () => v.be.stage(v.data.status.unstaged), { statusOnly: true })}
           onUnstageAll={() => run('Unstaging', () => v.be.unstage(v.data.status.staged.map((f) => f.path)), { statusOnly: true })}
-          onHunk={applyHunk}
           onCommit={doCommit}
           onCopy={copy}
           onJump={jump}

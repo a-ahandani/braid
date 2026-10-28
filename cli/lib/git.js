@@ -1,22 +1,23 @@
 import { execFile, spawn } from 'node:child_process'
 import { existsSync, statSync } from 'node:fs'
+import { lstat, readFile, writeFile } from 'node:fs/promises'
 import { join, resolve, sep } from 'node:path'
 
 const NUL = '\0'
 const RS = '\x1e'
 
-export function run(dir, args, { input, allowFail = false } = {}) {
+export function run(dir, args, { input, allowFail = false, buffer = false } = {}) {
   return new Promise((resolve, reject) => {
     const child = execFile(
       'git',
       args,
-      { cwd: dir, maxBuffer: 256 * 1024 * 1024, env: { ...process.env, GIT_TERMINAL_PROMPT: '0', GIT_OPTIONAL_LOCKS: '0', LC_ALL: 'C' } },
+      { cwd: dir, maxBuffer: 256 * 1024 * 1024, encoding: buffer ? 'buffer' : 'utf8', env: { ...process.env, GIT_TERMINAL_PROMPT: '0', GIT_OPTIONAL_LOCKS: '0', LC_ALL: 'C' } },
       (err, stdout, stderr) => {
         if (err && !allowFail) {
           const msg = (stderr || stdout || err.message).toString().trim()
           reject(new Error(msg || `git ${args[0]} failed`))
         } else {
-          resolve({ ok: !err, stdout: stdout.toString(), stderr: stderr.toString() })
+          resolve({ ok: !err, stdout: buffer ? stdout : stdout.toString(), stderr: stderr.toString() })
         }
       },
     )
@@ -226,74 +227,67 @@ export async function commitFiles(dir, oid) {
   return withStats(out, parseNumstat(stats.stdout))
 }
 
-export function parseDiff(text) {
-  const lines = []
-  let inHunk = false
-  for (const raw of text.split('\n')) {
-    if (raw.startsWith('@@')) {
-      inHunk = true
-      lines.push({ type: 'hunk', text: raw })
-    } else if (raw.startsWith('Binary files')) {
-      lines.push({ type: 'note', text: 'Binary file' })
-    } else if (!inHunk) {
-      continue
-    } else if (raw.startsWith('+')) lines.push({ type: 'add', text: raw.slice(1) })
-    else if (raw.startsWith('-')) lines.push({ type: 'del', text: raw.slice(1) })
-    else if (raw.startsWith(' ')) lines.push({ type: 'ctx', text: raw.slice(1) })
-    else if (raw.startsWith('\\')) lines.push({ type: 'note', text: raw })
-  }
-  return lines
+const MAX_TEXT = 2_000_000
+
+function isBinary(buf) {
+  const n = Math.min(buf.length, 8000)
+  for (let i = 0; i < n; i++) if (buf[i] === 0) return true
+  return false
 }
 
-async function rawDiff(dir, area, path, ignoreWs = false) {
+async function showBytes(dir, spec) {
+  const size = await run(dir, ['cat-file', '-s', spec], { allowFail: true })
+  if (!size.ok) return undefined
+  if (Number(size.stdout) > MAX_TEXT) return 'big'
+  const r = await run(dir, ['cat-file', '--filters', spec], { allowFail: true, buffer: true })
+  return r.ok ? r.stdout : undefined
+}
+
+export async function fileVersions(dir, area, path) {
   safePaths([path])
-  const ws = ignoreWs ? ['-w'] : []
-  let args
+  let oldData
+  let newData
   if (area.kind === 'commit') {
     const parent = await parentOf(dir, area.oid)
-    args = parent ? ['diff', '--no-color', '-M', ...ws, parent, area.oid, '--', path] : ['show', '--format=', '--no-color', ...ws, area.oid, '--', path]
+    oldData = parent ? await showBytes(dir, `${parent}:${path}`) : undefined
+    newData = await showBytes(dir, `${safeName(area.oid)}:${path}`)
   } else if (area.kind === 'staged') {
-    args = ['diff', '--no-color', '--cached', ...ws, '--', path]
+    oldData = await showBytes(dir, `HEAD:${path}`)
+    newData = await showBytes(dir, `:${path}`)
   } else {
-    const tracked = (await run(dir, ['ls-files', '--error-unmatch', '--', path], { allowFail: true })).ok
-    args = tracked ? ['diff', '--no-color', ...ws, '--', path] : ['diff', '--no-color', '--no-index', '--', '/dev/null', path]
+    oldData = (await showBytes(dir, `:${path}`)) ?? (await showBytes(dir, `HEAD:${path}`))
+    const full = insideRepo(dir, path)
+    const st = await lstat(full).catch(() => undefined)
+    newData = !st ? undefined : st.isSymbolicLink() || st.size > MAX_TEXT ? 'big' : await readFile(full)
   }
-  return (await run(dir, args, { allowFail: true })).stdout
+  const binary = [oldData, newData].some((b) => b === 'big' || (b && isBinary(b)))
+  return { old: binary || !oldData ? '' : oldData.toString('utf8'), new: binary || !newData ? '' : newData.toString('utf8'), binary }
 }
 
-export async function diff(dir, area, path, ignoreWs) {
-  return parseDiff(await rawDiff(dir, area, path, ignoreWs))
+export async function writeIndex(dir, path, content) {
+  safePaths([path])
+  const oid = (await run(dir, ['hash-object', '-w', '--stdin', `--path=${path}`], { input: content })).stdout.trim()
+  const entry = (await run(dir, ['ls-files', '-s', '--', path], { allowFail: true })).stdout.trim()
+  const mode = entry ? entry.split(' ')[0] : '100644'
+  await run(dir, ['update-index', '--add', '--cacheinfo', `${mode},${oid},${path}`])
 }
 
-export function splitPatch(text) {
-  const lines = text.split('\n')
-  const first = lines.findIndex((l) => l.startsWith('@@'))
-  if (first < 0) return { header: text, hunks: [] }
-  const header = lines.slice(0, first).join('\n') + '\n'
-  const hunks = []
-  for (const l of lines.slice(first)) {
-    if (l.startsWith('@@')) hunks.push([])
-    hunks[hunks.length - 1].push(l)
-  }
-  return { header, hunks: hunks.map((h) => h.join('\n').replace(/\n+$/, '') + '\n') }
+function insideRepo(dir, path) {
+  const full = resolve(dir, path)
+  if (!full.startsWith(resolve(dir) + sep)) throw new Error('Path is outside the repository')
+  return full
 }
 
-export async function applyHunk(dir, area, path, hunk, op) {
-  if (!['stage', 'unstage', 'discard'].includes(op)) throw new Error('Invalid hunk operation')
-  const source = op === 'unstage' ? { kind: 'staged' } : { kind: 'unstaged' }
-  if (area.kind !== source.kind) throw new Error('That hunk is not in the expected area')
-  const { header, hunks } = splitPatch(await rawDiff(dir, source, path))
-  const piece = hunks[Number(hunk)]
-  if (!piece) throw new Error('Hunk not found; the file changed, refresh and try again')
-  const patch = header + piece
-  const args = op === 'stage' ? ['apply', '--cached', '--recount', '--whitespace=nowarn'] : op === 'unstage' ? ['apply', '--cached', '--reverse', '--recount', '--whitespace=nowarn'] : ['apply', '--reverse', '--recount', '--whitespace=nowarn']
-  await run(dir, args, { input: patch })
+export async function writeWorkdir(dir, path, content) {
+  safePaths([path])
+  const full = insideRepo(dir, path)
+  if (await lstat(full).then((s) => s.isSymbolicLink(), () => false)) throw new Error('That path is a symbolic link')
+  await writeFile(full, content)
 }
 
 export function openPath(dir, path) {
   safePaths([path])
-  const full = resolve(dir, path)
-  if (!full.startsWith(resolve(dir) + sep)) throw new Error('Path is outside the repository')
+  const full = insideRepo(dir, path)
   if (!existsSync(full)) throw new Error('That file no longer exists')
   const cmd = process.platform === 'darwin' ? 'open' : process.platform === 'win32' ? 'cmd' : 'xdg-open'
   const args = process.platform === 'win32' ? ['/c', 'start', '', full] : [full]

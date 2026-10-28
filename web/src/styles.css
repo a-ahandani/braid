@@ -558,59 +558,15 @@ textarea:focus {
   height: 10px;
 }
 
-.diff {
-  flex: 1;
-  overflow: auto;
-  font-family: var(--mono);
-  font-size: 12px;
-  min-height: 0;
-}
 
-.diff .path {
-  padding: 4px 8px;
-  color: var(--text-2);
-  font-size: 12px;
-}
 
-.diff .line {
-  white-space: pre;
-  padding: 0 8px 0 22px;
-  line-height: 18px;
-  position: relative;
-}
 
-.diff .line::before {
-  position: absolute;
-  left: 8px;
-}
 
-.diff .add {
-  background: rgba(63, 185, 80, 0.18);
-  color: var(--text-bright);
-}
 
-.diff .add::before {
-  content: '+';
-}
 
-.diff .del {
-  background: rgba(229, 83, 75, 0.18);
-  color: var(--text-bright);
-}
 
-.diff .del::before {
-  content: '-';
-}
 
-.diff .hunk {
-  background: rgba(91, 156, 246, 0.12);
-  color: rgba(74, 200, 232, 0.9);
-}
 
-.diff .note {
-  color: var(--text-3);
-  padding: 8px;
-}
 
 .placeholder {
   flex: 1;
@@ -1065,60 +1021,17 @@ button.small {
   white-space: pre;
 }
 
-.diff.wrap .line {
-  white-space: pre-wrap;
-}
 
 .diff .line::before {
   content: none;
 }
 
-.diff .line .no {
-  flex: none;
-  width: 42px;
-  text-align: right;
-  padding-right: 6px;
-  color: var(--text-3);
-  user-select: none;
-  background: rgba(0, 0, 0, 0.12);
-}
 
-.diff .line .t {
-  padding-left: 10px;
-  flex: 1;
-  min-width: 0;
-}
 
-.diff .line.add .t::before {
-  content: '+ ';
-  color: var(--green);
-}
 
-.diff .line.del .t::before {
-  content: '− ';
-  color: var(--red);
-}
 
-.diff .line.hunk {
-  position: sticky;
-  top: 0;
-  z-index: 1;
-  background: var(--panel1);
-}
 
-.diff .hunk-acts {
-  margin-left: auto;
-  display: flex;
-  gap: 4px;
-  padding-right: 6px;
-  align-items: center;
-}
 
-.diff .hunk-acts button {
-  font-size: 11px;
-  padding: 0 6px;
-  line-height: 16px;
-}
 
 .overlay.top {
   align-items: flex-start;
@@ -1213,4 +1126,78 @@ kbd {
   padding: 1px 6px;
   min-width: 70px;
   text-align: center;
+}
+
+.diff-editor {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.diff-editor .cm-host,
+.diff-editor .cm-host > .cm-editor,
+.diff-editor .cm-host > .cm-mergeView {
+  height: 100%;
+}
+
+.diff-editor .cm-mergeView {
+  overflow: auto;
+}
+
+.diff-editor .cm-mergeViewEditors {
+  min-height: 100%;
+}
+
+.diff-editor .cm-mergeViewEditor + .cm-mergeViewEditor {
+  border-left: 1px solid var(--border);
+}
+
+.diff-editor .cm-editor {
+  font-size: 12px;
+  background: var(--app-bg);
+}
+
+.diff-editor .cm-editor .cm-scroller {
+  font-family: var(--mono);
+  line-height: 18px;
+}
+
+.diff-editor .cm-editor.cm-focused {
+  outline: none;
+}
+
+.diff-editor .cm-gutters {
+  background: var(--panel0);
+  color: var(--text-3);
+  border-right: 1px solid var(--border);
+}
+
+.diff-editor .cm-collapsedLines {
+  cursor: pointer;
+}
+
+.chunk-ctl {
+  position: absolute;
+  right: 18px;
+  display: flex;
+  gap: 4px;
+  z-index: 5;
+  transform: translateY(1px);
+}
+
+.chunk-ctl button {
+  font-size: 11px;
+  padding: 0 7px;
+  line-height: 16px;
+  background: var(--panel2);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+}
+
+.chunk-ctl button:disabled {
+  opacity: 0.5;
+}
+
+.diff-editor.split .chunk-ctl {
+  right: 10px;
 }

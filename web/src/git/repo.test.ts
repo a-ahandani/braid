@@ -3,7 +3,7 @@ import * as os from 'node:os'
 import * as path from 'node:path'
 import git from 'isomorphic-git'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { commit, commitFiles, createTag, diffLines, discard, load, stage, status, unstage, type Ctx } from './repo'
+import { commit, commitFiles, createTag, discard, fileVersions, load, stage, status, unstage, writeIndex, type Ctx } from './repo'
 
 let dir: string
 let ctx: Ctx
@@ -38,8 +38,13 @@ describe('repo', () => {
     expect(data.commits[0].body).toBe('more detail')
     expect(data.refsByOid.get(data.commits[0].id)?.[0]).toEqual({ name: 'main', kind: 'head', current: true })
     expect(await commitFiles(ctx, data.commits[0].id)).toEqual([{ path: 'a.txt', kind: 'M' }])
-    const lines = await diffLines(ctx, { kind: 'commit', oid: data.commits[0].id }, 'a.txt')
-    expect(lines.some((l) => l.type === 'add' && l.text === 'world')).toBe(true)
+    const v = await fileVersions(ctx, { kind: 'commit', oid: data.commits[0].id }, 'a.txt')
+    expect(v).toEqual({ old: 'hello\n', new: 'hello\nworld\n', binary: false })
+    fs.writeFileSync(path.join(dir, 'a.txt'), 'hello\nworld\nagain\n')
+    await writeIndex(ctx, 'a.txt', 'hello\nworld\npartial\n')
+    expect(await fileVersions(ctx, { kind: 'staged' }, 'a.txt')).toMatchObject({ old: 'hello\nworld\n', new: 'hello\nworld\npartial\n' })
+    expect(await fileVersions(ctx, { kind: 'unstaged' }, 'a.txt')).toMatchObject({ old: 'hello\nworld\npartial\n', new: 'hello\nworld\nagain\n' })
+    expect((await status(ctx)).staged).toEqual([{ path: 'a.txt', kind: 'M' }])
   })
 
   it('puts an annotated tag on its commit without adding a row', async () => {

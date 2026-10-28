@@ -1,8 +1,9 @@
 import type { JSX } from 'preact'
-import { useMemo, useState } from 'preact/hooks'
-import type { HunkOp } from '../git/backend'
-import type { Commit, DiffArea, DiffLine, FileChange, RepoData } from '../git/repo'
+import { useMemo, useRef, useState } from 'preact/hooks'
+import type { FileVersions } from '../git/backend'
+import type { Commit, DiffArea, FileChange, RepoData } from '../git/repo'
 import { Avatar, ago, fmtDate, short } from './bits'
+import { DiffEditor, type ChunkAction, type DiffEditorHandle, type DiffMode } from './DiffEditor'
 
 export interface FileSel {
   area: DiffArea
@@ -11,7 +12,7 @@ export interface FileSel {
 
 export interface DiffOptions {
   wrap: boolean
-  ignoreWs: boolean
+  mode: DiffMode
 }
 
 export interface DetailProps {
@@ -21,9 +22,13 @@ export interface DetailProps {
   commitFiles: FileChange[]
   isStash: boolean
   selectedFile?: FileSel
-  diff: DiffLine[]
+  versions?: FileVersions
   diffOptions: DiffOptions
-  native: boolean
+  dark: boolean
+  chunkActions: ChunkAction[]
+  onSaveFile: (text: string) => void
+  dirty: boolean
+  onDirty: (dirty: boolean) => void
   tree: boolean
   summary: string
   description: string
@@ -39,7 +44,6 @@ export interface DetailProps {
   onDiscard: (files: FileChange[]) => void
   onStageAll: () => void
   onUnstageAll: () => void
-  onHunk: (area: DiffArea, path: string, hunk: number, op: HunkOp) => void
   onCommit: () => void
   onCopy: (s: string) => void
   onJump: (oid: string) => void
@@ -160,43 +164,11 @@ function FileList(p: { files: FileChange[]; tree: boolean; isSelected: (f: FileC
   return <>{render(root!, 0)}</>
 }
 
-interface Annotated extends DiffLine {
-  oldNo?: number
-  newNo?: number
-  hunk: number
-}
-
-function annotate(lines: DiffLine[]): Annotated[] {
-  let oldNo = 0
-  let newNo = 0
-  let hunk = -1
-  return lines.map((l) => {
-    if (l.type === 'hunk') {
-      hunk++
-      const m = /@@ -(\d+)(?:,\d+)? \+(\d+)/.exec(l.text)
-      oldNo = m ? Number(m[1]) : 0
-      newNo = m ? Number(m[2]) : 0
-      return { ...l, hunk }
-    }
-    if (l.type === 'add') return { ...l, hunk, newNo: newNo++ }
-    if (l.type === 'del') return { ...l, hunk, oldNo: oldNo++ }
-    if (l.type === 'ctx') return { ...l, hunk, oldNo: oldNo++, newNo: newNo++ }
-    return { ...l, hunk }
-  })
-}
-
-function Diff(p: { sel?: FileSel; lines: DiffLine[]; options: DiffOptions; native: boolean; onOptions: (o: DiffOptions) => void; onHunk: (hunk: number, op: HunkOp) => void }) {
-  const [cursor, setCursor] = useState(0)
-  const rows = useMemo(() => annotate(p.lines), [p.lines])
-  const hunks = rows.filter((r) => r.type === 'hunk').length
+function Diff(p: { sel?: FileSel; versions?: FileVersions; options: DiffOptions; dark: boolean; dirty: boolean; actions: ChunkAction[]; onOptions: (o: DiffOptions) => void; onSave: (text: string) => void; onDirty: (dirty: boolean) => void }) {
+  const handle = useRef<DiffEditorHandle | undefined>(undefined)
   if (!p.sel) return <div class="placeholder">Pick a file to see its diff</div>
-  const area = p.sel.area.kind
-  const hunkOps: [HunkOp, string][] = area === 'unstaged' ? [['stage', 'Stage hunk'], ['discard', 'Discard hunk']] : area === 'staged' ? [['unstage', 'Unstage hunk']] : []
-  const go = (dir: 1 | -1) => {
-    const next = Math.max(0, Math.min(hunks - 1, cursor + dir))
-    setCursor(next)
-    document.getElementById(`hunk-${next}`)?.scrollIntoView({ block: 'start', behavior: 'smooth' })
-  }
+  if (!p.versions) return <div class="placeholder">Loading…</div>
+  const editable = p.sel.area.kind === 'unstaged'
   return (
     <div class="diff-wrap">
       <div class="diff-bar">
@@ -204,55 +176,41 @@ function Diff(p: { sel?: FileSel; lines: DiffLine[]; options: DiffOptions; nativ
           {p.sel.path}
         </span>
         <span class="spacer" />
-        {hunks > 1 && (
-          <>
-            <button class="ghost" title="Previous change" onClick={() => go(-1)}>
-              ↑
-            </button>
-            <span class="count">
-              {Math.min(cursor + 1, hunks)} / {hunks}
-            </span>
-            <button class="ghost" title="Next change" onClick={() => go(1)}>
-              ↓
-            </button>
-          </>
+        {p.dirty && (
+          <button class="success" onClick={() => handle.current && p.onSave(handle.current.text())} title="Write your edits to the working tree">
+            Save
+          </button>
         )}
+        <button class="ghost" title="Previous change" onClick={() => handle.current?.prev()}>
+          ↑
+        </button>
+        <button class="ghost" title="Next change" onClick={() => handle.current?.next()}>
+          ↓
+        </button>
+        <button class={`ghost ${p.options.mode === 'split' ? 'on' : ''}`} disabled={p.dirty} title={p.dirty ? 'Save or revert your edits first' : p.options.mode === 'split' ? 'Show inline' : 'Show side by side'} onClick={() => p.onOptions({ ...p.options, mode: p.options.mode === 'split' ? 'inline' : 'split' })}>
+          ⫼
+        </button>
         <button class={`ghost ${p.options.wrap ? 'on' : ''}`} title="Wrap long lines" onClick={() => p.onOptions({ ...p.options, wrap: !p.options.wrap })}>
           ⤶
         </button>
-        {p.native && (
-          <button class={`ghost ${p.options.ignoreWs ? 'on' : ''}`} title="Ignore whitespace changes" onClick={() => p.onOptions({ ...p.options, ignoreWs: !p.options.ignoreWs })}>
-            ␣
-          </button>
-        )}
       </div>
-      <div class={`diff ${p.options.wrap ? 'wrap' : ''}`}>
-        {rows.length === 0 && <div class="note">No text changes to show (binary or identical).</div>}
-        {rows.map((l, i) =>
-          l.type === 'hunk' ? (
-            <div class="line hunk" id={`hunk-${l.hunk}`} key={i}>
-              <span class="no" />
-              <span class="no" />
-              <span class="t">{l.text}</span>
-              {p.native && hunkOps.length > 0 && (
-                <span class="hunk-acts">
-                  {hunkOps.map(([op, label]) => (
-                    <button key={op} class={op === 'discard' ? 'danger' : ''} onClick={() => p.onHunk(l.hunk, op)}>
-                      {label}
-                    </button>
-                  ))}
-                </span>
-              )}
-            </div>
-          ) : (
-            <div class={`line ${l.type}`} key={i}>
-              <span class="no">{l.oldNo ?? ''}</span>
-              <span class="no">{l.newNo ?? ''}</span>
-              <span class="t">{l.text}</span>
-            </div>
-          ),
-        )}
-      </div>
+      {p.versions.binary ? (
+        <div class="placeholder">Binary or very large file</div>
+      ) : (
+        <DiffEditor
+          oldText={p.versions.old}
+          newText={p.versions.new}
+          filename={p.sel.path}
+          mode={p.options.mode}
+          dark={p.dark}
+          wrap={p.options.wrap}
+          editable={editable}
+          dirty={p.dirty}
+          actions={p.actions}
+          onDirty={p.onDirty}
+          handle={(h) => (handle.current = h)}
+        />
+      )}
     </div>
   )
 }
@@ -263,7 +221,6 @@ export function DetailPanel(p: DetailProps) {
       {p.tree ? '☰' : '🌲'}
     </button>
   )
-  const hunk = (hunkIdx: number, op: HunkOp) => p.selectedFile && p.onHunk(p.selectedFile.area, p.selectedFile.path, hunkIdx, op)
   if (p.commit) {
     const c = p.commit
     return (
@@ -302,7 +259,7 @@ export function DetailPanel(p: DetailProps) {
           <FileList files={p.commitFiles} tree={p.tree} isSelected={(f) => p.selectedFile?.path === f.path} onPick={(f) => p.onSelectFile({ area: { kind: 'commit', oid: c.id }, path: f.path })} onMenu={(e, f) => p.onFileMenu(e, f, { kind: 'commit', oid: c.id })} />
         </div>
         <div class="hr" />
-        <Diff sel={p.selectedFile} lines={p.diff} options={p.diffOptions} native={p.native} onOptions={p.onDiffOptions} onHunk={hunk} />
+        <Diff sel={p.selectedFile} versions={p.versions} options={p.diffOptions} dark={p.dark} dirty={p.dirty} actions={p.chunkActions} onOptions={p.onDiffOptions} onSave={p.onSaveFile} onDirty={p.onDirty} />
       </div>
     )
   }
@@ -374,7 +331,7 @@ export function DetailPanel(p: DetailProps) {
         />
       </div>
       <div class="hr" />
-      <Diff sel={p.selectedFile} lines={p.diff} options={p.diffOptions} native={p.native} onOptions={p.onDiffOptions} onHunk={hunk} />
+      <Diff sel={p.selectedFile} versions={p.versions} options={p.diffOptions} dark={p.dark} dirty={p.dirty} actions={p.chunkActions} onOptions={p.onDiffOptions} onSave={p.onSaveFile} onDirty={p.onDirty} />
       <div class="commit-box">
         {!p.data.headBranch && p.data.headOid && <div class="warn">Not on a branch (detached HEAD)</div>}
         <div class="label">Message</div>

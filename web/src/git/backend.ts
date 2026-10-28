@@ -1,17 +1,24 @@
-import type { DiffArea, DiffLine, FileChange, RepoData, WorkStatus } from './repo'
+import type { DiffArea, FileChange, RepoData, WorkStatus } from './repo'
 
 export type RepoState = 'merge' | 'rebase' | 'cherry-pick' | 'revert' | null
 export type PullMode = 'merge' | 'ff-only' | 'rebase'
 export type ResetMode = 'soft' | 'mixed' | 'hard'
 export type MergeResult = 'up-to-date' | 'fast-forward' | 'merged' | 'conflicts' | 'done'
-export type HunkOp = 'stage' | 'unstage' | 'discard'
+
+export interface FileVersions {
+  old: string
+  new: string
+  binary: boolean
+}
 
 export interface Backend {
   native: boolean
   load(limit: number): Promise<RepoData>
   status(): Promise<WorkStatus>
   commitFiles(oid: string): Promise<FileChange[]>
-  diffLines(area: DiffArea, path: string, ignoreWs?: boolean): Promise<DiffLine[]>
+  fileVersions(area: DiffArea, path: string): Promise<FileVersions>
+  writeIndex(path: string, content: string): Promise<void>
+  writeWorkdir(path: string, content: string): Promise<void>
   stage(files: FileChange[]): Promise<void>
   unstage(paths: string[]): Promise<void>
   discard(files: FileChange[]): Promise<void>
@@ -37,7 +44,6 @@ export interface Backend {
   revert?(oid: string): Promise<MergeResult>
   abort?(): Promise<void>
   continueOp?(): Promise<void>
-  applyHunk?(area: DiffArea, path: string, hunk: number, op: HunkOp): Promise<void>
   openPath?(path: string): Promise<void>
   subscribe?(onChange: () => void): () => void
 }

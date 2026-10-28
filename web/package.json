@@ -10,16 +10,21 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@codemirror/language": "^6.13.1",
+    "@codemirror/language-data": "^6.5.2",
+    "@codemirror/merge": "^6.12.3",
+    "@codemirror/state": "^6.7.6",
+    "@codemirror/theme-one-dark": "^6.1.3",
+    "@codemirror/view": "^6.43.15",
     "@isomorphic-git/lightning-fs": "^4.10.3",
     "buffer": "^6.0.3",
-    "diff": "^9.0.0",
+    "codemirror": "^6.0.2",
     "idb-keyval": "^6.3.0",
     "isomorphic-git": "^1.44.5",
     "preact": "^11.0.2"
   },
   "devDependencies": {
     "@preact/preset-vite": "^2.10.6",
-    "@types/diff": "^7.0.2",
     "@types/node": "^24.19.2",
     "typescript": "~7.0.2",
     "vite": "^8.3.5",

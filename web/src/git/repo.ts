@@ -1,7 +1,6 @@
 import git, { type FsClient, type ReadCommitResult } from 'isomorphic-git'
 import http from 'isomorphic-git/http/web'
-import { structuredPatch } from 'diff'
-import type { Backend, RepoState } from './backend'
+import type { Backend, FileVersions, RepoState } from './backend'
 import type { NodeKind } from './graph'
 
 export interface Ctx {
@@ -257,68 +256,75 @@ export async function commitFiles(ctx: Ctx, oid: string): Promise<FileChange[]> 
 
 export type DiffArea = { kind: 'commit'; oid: string } | { kind: 'staged' } | { kind: 'unstaged' }
 
-export interface DiffLine {
-  type: 'add' | 'del' | 'ctx' | 'hunk' | 'note'
-  text: string
-}
+const MAX_TEXT = 2_000_000
 
-async function blobAt(ctx: Ctx, oid: string | undefined, path: string): Promise<string> {
-  if (!oid) return ''
+async function blobAt(ctx: Ctx, oid: string | undefined, path: string): Promise<Uint8Array | undefined> {
+  if (!oid) return undefined
   try {
-    const { blob } = await git.readBlob({ fs: ctx.fs, dir: ctx.dir, oid, filepath: path, cache: ctx.cache })
-    return new TextDecoder().decode(blob)
+    return (await git.readBlob({ fs: ctx.fs, dir: ctx.dir, oid, filepath: path, cache: ctx.cache })).blob
   } catch {
-    return ''
+    return undefined
   }
 }
 
-async function stagedBlob(ctx: Ctx, path: string): Promise<string> {
-  const oids = await git.walk({
+async function indexEntry(ctx: Ctx, path: string): Promise<{ oid: string; mode: number } | undefined> {
+  const found = await git.walk({
     fs: ctx.fs,
     dir: ctx.dir,
     trees: [git.STAGE()],
-    map: async (filepath, [entry]) => (filepath === path && entry ? await entry.oid() : undefined),
+    map: async (filepath, [entry]) => (filepath === path && entry ? { oid: await entry.oid(), mode: await entry.mode() } : undefined),
   })
-  const oid = (oids as (string | undefined)[]).find((o) => o !== undefined)
-  if (!oid) return ''
-  const { blob } = await git.readBlob({ fs: ctx.fs, dir: ctx.dir, oid, cache: ctx.cache })
-  return new TextDecoder().decode(blob)
+  return (found as ({ oid: string; mode: number } | undefined)[]).find((e) => e !== undefined)
 }
 
-async function workdirText(ctx: Ctx, path: string): Promise<string> {
+async function stagedBlob(ctx: Ctx, path: string): Promise<Uint8Array | undefined> {
+  const entry = await indexEntry(ctx, path)
+  if (!entry) return undefined
+  return (await git.readBlob({ fs: ctx.fs, dir: ctx.dir, oid: entry.oid })).blob
+}
+
+async function workdirBytes(ctx: Ctx, path: string): Promise<Uint8Array | undefined> {
   try {
-    const data = (await (ctx.fs as { promises: { readFile: Function } }).promises.readFile(`${ctx.dir}/${path}`)) as Uint8Array
-    return new TextDecoder().decode(data)
+    return (await (ctx.fs as { promises: { readFile: Function } }).promises.readFile(`${ctx.dir}/${path}`)) as Uint8Array
   } catch {
-    return ''
+    return undefined
   }
 }
 
-export async function diffLines(ctx: Ctx, area: DiffArea, path: string): Promise<DiffLine[]> {
-  let oldText = ''
-  let newText = ''
+function isBinary(data?: Uint8Array): boolean {
+  if (!data) return false
+  const n = Math.min(data.length, 8000)
+  for (let i = 0; i < n; i++) if (data[i] === 0) return true
+  return false
+}
+
+export async function fileVersions(ctx: Ctx, area: DiffArea, path: string): Promise<FileVersions> {
+  let oldData: Uint8Array | undefined
+  let newData: Uint8Array | undefined
   if (area.kind === 'commit') {
     const c = await git.readCommit({ fs: ctx.fs, dir: ctx.dir, oid: area.oid, cache: ctx.cache })
-    oldText = await blobAt(ctx, c.commit.parent[0], path)
-    newText = await blobAt(ctx, area.oid, path)
+    oldData = await blobAt(ctx, c.commit.parent[0], path)
+    newData = await blobAt(ctx, area.oid, path)
   } else if (area.kind === 'staged') {
-    oldText = await blobAt(ctx, await resolve(ctx, 'HEAD'), path)
-    newText = await stagedBlob(ctx, path)
+    oldData = await blobAt(ctx, await resolve(ctx, 'HEAD'), path)
+    newData = await stagedBlob(ctx, path)
   } else {
-    oldText = (await stagedBlob(ctx, path)) || (await blobAt(ctx, await resolve(ctx, 'HEAD'), path))
-    newText = await workdirText(ctx, path)
+    oldData = (await stagedBlob(ctx, path)) ?? (await blobAt(ctx, await resolve(ctx, 'HEAD'), path))
+    newData = await workdirBytes(ctx, path)
   }
-  if (oldText.includes('\0') || newText.includes('\0')) return [{ type: 'note', text: 'Binary file' }]
-  if (oldText.length > 1_000_000 || newText.length > 1_000_000) return [{ type: 'note', text: 'File too large to diff' }]
-  const patch = structuredPatch(path, path, oldText, newText, undefined, undefined, { context: 3 })
-  const out: DiffLine[] = []
-  for (const h of patch.hunks) {
-    out.push({ type: 'hunk', text: `@@ -${h.oldStart},${h.oldLines} +${h.newStart},${h.newLines} @@` })
-    for (const l of h.lines) {
-      out.push({ type: l[0] === '+' ? 'add' : l[0] === '-' ? 'del' : 'ctx', text: l.slice(1) })
-    }
-  }
-  return out
+  const binary = isBinary(oldData) || isBinary(newData) || (oldData?.length ?? 0) > MAX_TEXT || (newData?.length ?? 0) > MAX_TEXT
+  const dec = new TextDecoder()
+  return { old: binary || !oldData ? '' : dec.decode(oldData), new: binary || !newData ? '' : dec.decode(newData), binary }
+}
+
+export async function writeIndex(ctx: Ctx, path: string, content: string) {
+  const oid = await git.writeBlob({ fs: ctx.fs, dir: ctx.dir, blob: new TextEncoder().encode(content) })
+  const entry = await indexEntry(ctx, path)
+  await git.updateIndex({ fs: ctx.fs, dir: ctx.dir, filepath: path, oid, mode: entry?.mode ?? 0o100644, add: true })
+}
+
+export async function writeWorkdir(ctx: Ctx, path: string, content: string) {
+  await (ctx.fs as { promises: { writeFile: Function } }).promises.writeFile(`${ctx.dir}/${path}`, content)
 }
 
 async function author(ctx: Ctx) {
@@ -330,23 +336,13 @@ async function author(ctx: Ctx) {
   throw new Error('Run `git config user.name` and `git config user.email` inside this repository, or fill in your name and email under Settings. The browser cannot read your global git config.')
 }
 
-async function indexMode(ctx: Ctx, path: string): Promise<number | undefined> {
-  const modes = await git.walk({
-    fs: ctx.fs,
-    dir: ctx.dir,
-    trees: [git.STAGE()],
-    map: async (filepath, [entry]) => (filepath === path && entry ? await entry.mode() : undefined),
-  })
-  return (modes as (number | undefined)[]).find((m) => m !== undefined)
-}
-
 export async function stage(ctx: Ctx, files: FileChange[]) {
   for (const f of files) {
     if (f.kind === 'D') {
       await git.remove({ fs: ctx.fs, dir: ctx.dir, filepath: f.path })
       continue
     }
-    const mode = f.kind === 'M' ? await indexMode(ctx, f.path) : undefined
+    const mode = f.kind === 'M' ? (await indexEntry(ctx, f.path))?.mode : undefined
     if (mode) await git.updateIndex({ fs: ctx.fs, dir: ctx.dir, filepath: f.path, mode, add: true })
     else await git.add({ fs: ctx.fs, dir: ctx.dir, filepath: f.path })
   }
@@ -491,7 +487,9 @@ export function localBackend(ctx: Ctx, settings: () => NetSettings): Backend {
     load: (limit) => load(ctx, limit),
     status: () => status(ctx),
     commitFiles: (oid) => commitFiles(ctx, oid),
-    diffLines: (area, path) => diffLines(ctx, area, path),
+    fileVersions: (area, path) => fileVersions(ctx, area, path),
+    writeIndex: (path, content) => writeIndex(ctx, path, content),
+    writeWorkdir: (path, content) => writeWorkdir(ctx, path, content),
     stage: (files) => stage(ctx, files),
     unstage: (paths) => unstage(ctx, paths),
     discard: (files) => discard(ctx, files),
