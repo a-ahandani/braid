@@ -96,10 +96,10 @@ export function createServer({ dir, root = dir, uiDir, token, stateFile = STATE 
   const info = (repo) => ({ dir: repo, name: basename(repo) })
   const SHELL = {
     repos: async () => ({ current: dir ? info(dir) : null, recent: (await readRecent()).filter((d) => existsSync(d)).map(info) }),
-    findRepos: async () => ({ root, repos: dir ? [] : (await git.findRepos(root)).map(info) }),
+    findRepos: async () => ({ root, repos: dir || root === homedir() ? [] : (await git.findRepos(root)).map(info) }),
     pickFolder: () => git.pickFolder(),
     openRepo: async (b) => {
-      const path = resolve(dir, String(b.path ?? '').trim().replace(/^~(?=$|[/\\])/, homedir()))
+      const path = resolve(dir ?? root, String(b.path ?? '').trim().replace(/^~(?=$|[/\\])/, homedir()))
       if (!existsSync(path) || !statSync(path).isDirectory()) throw new Error('That folder does not exist')
       const top = await git.toplevel(path)
       known.add(top)

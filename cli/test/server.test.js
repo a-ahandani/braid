@@ -36,6 +36,7 @@ after(() => {
 
 describe('helper server', () => {
   it('starts outside a repository and lists the repositories below it', async () => {
+    for (const skipped of [join('x', 'node_modules', 'dep'), join('.hidden', 'y'), join('a', 'b', 'c', 'd')]) execFileSync('git', ['init', '-q', join(root, skipped)])
     const bare = createServer({ root, uiDir: root, token, stateFile: join(root, 'state2', 'recent.json') })
     await new Promise((done) => bare.listen(0, '127.0.0.1', done))
     const at = `http://127.0.0.1:${bare.address().port}`
@@ -44,7 +45,7 @@ describe('helper server', () => {
       assert.equal((await post('repos')).result.current, null)
       assert.deepEqual((await post('findRepos')).result.repos.map((r) => r.name), ['first', 'second'])
       assert.match((await post('status')).error, /Open that repository first/)
-      assert.equal((await post('openRepo', { path: second })).result.name, 'second')
+      assert.equal((await post('openRepo', { path: './second' })).result.name, 'second')
       assert.deepEqual((await post('status', { repo: second })).result.unstaged, [])
     } finally {
       bare.close()

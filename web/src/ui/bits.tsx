@@ -80,7 +80,7 @@ export function Avatar({ name, email, color, size = 20 }: { name: string; email:
   const photo = !!url && !failed
   const letters = size < 20 ? initials(name).slice(0, 1) : initials(name)
   return (
-    <span class={`avatar ${photo ? '' : 'initials'}`} style={{ '--c': color, width: `${size}px`, height: `${size}px`, fontSize: `${Math.round(size * (letters.length > 1 ? 0.4 : 0.5))}px` }} title={name}>
+    <span class="avatar" style={{ '--c': color, width: `${size}px`, height: `${size}px`, fontSize: `${Math.round(size * (letters.length > 1 ? 0.4 : 0.5))}px` }} title={name}>
       {photo ? <img src={url} alt="" onError={() => setFailed(true)} /> : letters}
     </span>
   )

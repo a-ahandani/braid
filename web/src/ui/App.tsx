@@ -532,6 +532,7 @@ export function App(p: { be: Backend; active: boolean; theme: Theme; onTheme: (t
     const list: Command[] = [
       { id: 'fetch', group: 'Action', label: 'Fetch every remote', hint: '⌘L', run: () => run('Fetch', () => v.be.fetchAll(), { after: () => setToast('Fetch done') }) },
       { id: 'pull', group: 'Action', label: 'Pull', run: () => head && run('Pull', () => v.be.pull(pullMode, head), { after: () => setToast('Pull done') }) },
+      ...(v.be.native ? (Object.keys(PULL_MODES) as PullMode[]).map((m) => ({ id: `pullmode:${m}`, group: 'Action', label: `Pull mode: ${PULL_MODES[m]}${m === pullMode ? ' (current)' : ''}`, run: () => setPullMode(m) })) : []),
       { id: 'push', group: 'Action', label: 'Push', run: () => head && run('Push', () => v.be.push(head), { after: () => setToast('Push done') }) },
       { id: 'branch', group: 'Action', label: 'New branch from HEAD', hint: '⌘B', run: () => v.data.headOid && setDialog({ kind: 'branch', at: v.data.headOid }) },
       { id: 'stash', group: 'Action', label: 'Stash everything', run: () => setDialog({ kind: 'stash' }) },

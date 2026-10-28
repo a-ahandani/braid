@@ -22,7 +22,9 @@ if (!existsSync(root) || !statSync(root).isDirectory()) {
   console.error(`No such folder: ${root}`)
   process.exit(1)
 }
-const dir = await toplevel(root).catch(() => undefined)
+const dir = await toplevel(root).catch((e) => {
+  if (!/not a git repository/.test(e.message)) console.error(e.message.trim())
+})
 
 const uiDir = join(dirname(fileURLToPath(import.meta.url)), '..', 'ui')
 if (!existsSync(join(uiDir, 'index.html'))) {

@@ -18,6 +18,9 @@ export interface MenuState {
 export function Menu({ menu, onClose }: { menu: MenuState; onClose: () => void }) {
   const ref = useRef<HTMLDivElement>(null)
   useEffect(() => {
+    ref.current?.querySelector('button')?.focus()
+  }, [])
+  useEffect(() => {
     const el = ref.current
     if (!el) return
     const r = el.getBoundingClientRect()
@@ -46,6 +49,7 @@ export function Menu({ menu, onClose }: { menu: MenuState; onClose: () => void }
           <button
             key={i}
             class={it.danger ? 'danger' : ''}
+            aria-pressed={it.checked}
             onClick={() => {
               onClose()
               it.onClick?.()
