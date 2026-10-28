@@ -93,6 +93,6 @@ export async function ask(id, prompt, { signal, env = process.env, timeout = 300
     if (code !== 0 || !reply) throw new Error(reason(stderr, agent.name))
     return reply
   } finally {
-    await rm(tmp, { recursive: true, force: true })
+    rm(tmp, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 }).catch(() => {})
   }
 }
