@@ -141,6 +141,12 @@ h1 {
   background: #fff;
 }
 
+.req {
+  margin: 14px 0 0;
+  color: var(--muted);
+  font-size: 14px;
+}
+
 .text-link {
   color: var(--muted);
   font-size: 15px;

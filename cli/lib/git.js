@@ -39,6 +39,12 @@ function safePaths(paths) {
   })
 }
 
+export function gitProblem(versionText) {
+  const v = /(\d+)\.(\d+)/.exec(versionText ?? '')
+  if (!v) return 'Ramulus needs git. Install it from https://git-scm.com/downloads and run it again.'
+  if (Number(v[1]) < 2 || (Number(v[1]) === 2 && Number(v[2]) < 23)) return `Ramulus needs git 2.23 or newer, and this is git ${v[1]}.${v[2]}. Update it from https://git-scm.com/downloads`
+}
+
 export async function toplevel(dir) {
   return (await run(dir, ['rev-parse', '--show-toplevel'])).stdout.trim()
 }

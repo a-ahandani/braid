@@ -102,6 +102,13 @@ describe('git helper', () => {
       ],
     })
   })
+
+  it('names a missing or too old git and accepts current ones', () => {
+    assert.match(git.gitProblem(''), /needs git\. Install/)
+    assert.match(git.gitProblem('git version 2.22.5'), /2\.23 or newer, and this is git 2\.22/)
+    assert.equal(git.gitProblem('git version 2.50.1 (Apple Git-155)'), undefined)
+    assert.equal(git.gitProblem('git version 2.45.1.windows.1'), undefined)
+  })
 })
 
 describe('rebase with local changes', () => {

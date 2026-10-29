@@ -4,13 +4,17 @@ import { spawn } from 'node:child_process'
 import { existsSync, statSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { toplevel } from '../lib/git.js'
+import { gitProblem, run, toplevel } from '../lib/git.js'
 import { createServer } from '../lib/server.js'
 
 const args = process.argv.slice(2)
 if (args.includes('-h') || args.includes('--help')) {
   console.log('Usage: ramulus [path] [--port N] [--no-open]\n\nServes the Ramulus UI for the repository at path (default: current directory).')
   process.exit(0)
+}
+if (Number(process.versions.node.split('.')[0]) < 20) {
+  console.error(`Ramulus needs Node 20 or newer, and this is Node ${process.versions.node}. Update it from https://nodejs.org`)
+  process.exit(1)
 }
 const portArg = args.indexOf('--port')
 const port = portArg >= 0 ? Number(args[portArg + 1]) : 0
@@ -20,6 +24,11 @@ const pathArg = args.find((a, i) => !a.startsWith('-') && args[i - 1] !== '--por
 const root = resolve(pathArg)
 if (!existsSync(root) || !statSync(root).isDirectory()) {
   console.error(`No such folder: ${root}`)
+  process.exit(1)
+}
+const problem = gitProblem(await run(root, ['--version']).then((r) => r.stdout, () => ''))
+if (problem) {
+  console.error(problem)
   process.exit(1)
 }
 const dir = await toplevel(root).catch((e) => {
