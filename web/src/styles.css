@@ -1310,9 +1310,11 @@ svg.codicon {
   gap: 10px;
 }
 
-.welcome h1 .codicon {
-  font-size: 32px;
-  line-height: 32px;
+.welcome h1 .brand-mark {
+  width: 44px;
+  height: 36px;
+  background: currentColor;
+  mask: url('./mark.svg') center / contain no-repeat;
 }
 
 .welcome p {
