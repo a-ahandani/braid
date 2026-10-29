@@ -2186,7 +2186,7 @@ button.sb-empty.open {
 .ai-btn {
   height: 26px;
   padding: 0 12px;
-  margin-left: 2px;
+  margin-left: 6px;
   border-radius: 13px;
   background: var(--btn);
   color: var(--btn-fg);

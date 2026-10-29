@@ -15,6 +15,24 @@ export function Icon({ name }: { name: string }) {
   return <i class={`codicon codicon-${name}`} aria-hidden="true" />
 }
 
+export async function settleLimited<T>(tasks: (() => Promise<T>)[], limit: number, onSettled: (done: number) => void): Promise<PromiseSettledResult<T>[]> {
+  const results: PromiseSettledResult<T>[] = []
+  let next = 0
+  let done = 0
+  const worker = async () => {
+    while (next < tasks.length) {
+      const i = next++
+      results[i] = await tasks[i]().then(
+        (value) => ({ status: 'fulfilled', value }) as const,
+        (reason) => ({ status: 'rejected', reason }) as const,
+      )
+      onSettled(++done)
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(limit, tasks.length) }, worker))
+  return results
+}
+
 export function BrandMark() {
   return <span class="brand-mark" aria-hidden="true" />
 }

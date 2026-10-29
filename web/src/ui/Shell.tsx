@@ -7,7 +7,7 @@ import { helperShell, httpBackend, type RepoInfo } from '../git/remote'
 import { localBackend } from '../git/repo'
 import { isScheme, schemeVars, type Scheme } from '../git/scheme'
 import { App, loadSettings, type TabApi, type Theme } from './App'
-import { BrandLinks, BrandMark, Icon } from './bits'
+import { BrandLinks, BrandMark, Icon, settleLimited } from './bits'
 import { Dialogs, type Dialog } from './Dialogs'
 import { Palette, type Command } from './Palette'
 import { Sidebar, type SideRecent } from './Sidebar'
@@ -60,6 +60,8 @@ const fallbackAuthor = () => {
 }
 
 const keepsSidebar = () => !!document.querySelector('.sidebar :focus-visible')
+
+const ALL_AT_ONCE = 3
 
 export function Shell() {
   const [tabs, setTabs] = useState<Tab[]>([])
@@ -195,8 +197,13 @@ export function Shell() {
     if (list.length === 0 || runningRef.current) return
     runningRef.current = true
     const noun = (n: number) => `${n} ${n === 1 ? 'repository' : 'repositories'}`
-    setRunning(`${kind === 'pull' ? 'Pulling' : 'Fetching'} ${noun(list.length)}…`)
-    const results = await Promise.allSettled(list.map((x) => x.api[kind]()))
+    const verb = `${kind === 'pull' ? 'Pulling' : 'Fetching'} ${noun(list.length)}…`
+    setRunning(verb)
+    const results = await settleLimited(
+      list.map((x) => () => x.api[kind]()),
+      ALL_AT_ONCE,
+      (done) => setRunning(`${verb} ${done} done`),
+    )
     runningRef.current = false
     setRunning(undefined)
     const failed = results.flatMap((r, i) => (r.status === 'rejected' ? [`${list[i].t.name}: ${reason(r.reason)}`] : []))

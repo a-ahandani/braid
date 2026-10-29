@@ -155,6 +155,8 @@ export function App(p: { be: Backend; active: boolean; theme: Theme; onTheme: (t
   viewRef.current = view
   const busyRef = useRef(busy)
   busyRef.current = busy
+  const activeRef = useRef(p.active)
+  activeRef.current = p.active
 
   useEffect(() => {
     localStorage.setItem('ramulus.drawer', String(drawerH))
@@ -235,7 +237,7 @@ export function App(p: { be: Backend; active: boolean; theme: Theme; onTheme: (t
         busyRef.current = undefined
         setBusy(undefined)
       }
-      await reload()
+      if (activeRef.current) await reload()
     }
     p.onApi({
       pull: () =>
@@ -1057,11 +1059,6 @@ export function App(p: { be: Backend; active: boolean; theme: Theme; onTheme: (t
           <button class="tool" disabled={!!busy || v.data.stashes.length === 0} onClick={() => run('Applying stash', () => v.be.stashApply(0, true))} title="Apply and drop the newest stash" aria-label="Pop stash">
             <Icon name="git-stash-pop" />
           </button>
-          <span class="sep" />
-          <button class={`ai-btn ${drawerShown ? 'on' : ''}`} onClick={toggleAgent} title="Your AI agent and terminals (⌃`)" aria-pressed={drawerShown}>
-            <Icon name="sparkle" />
-            Agent
-          </button>
         </div>
         <div class="tb-side tb-end">
           <span class="search">
@@ -1084,6 +1081,10 @@ export function App(p: { be: Backend; active: boolean; theme: Theme; onTheme: (t
             <Icon name="refresh" />
           </button>
           <BrandLinks />
+          <button class={`ai-btn ${drawerShown ? 'on' : ''}`} onClick={toggleAgent} title="Your AI agent and terminals (⌃`)" aria-pressed={drawerShown}>
+            <Icon name="sparkle" />
+            Agent
+          </button>
         </div>
       </div>
       <div class={`body ${showLeft ? '' : 'no-left'}`} style={{ '--left-w': `${leftW}px` }}>
