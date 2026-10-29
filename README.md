@@ -1,3 +1,5 @@
+<img src="site/icon.svg" alt="The Ramulus icon, a gold stick insect with violet legs" width="96" height="96" />
+
 # Ramulus
 
 A local-first Git GUI. Every branch in one graph, editor-grade diffs, and your repositories in a sidebar. No account, no cloud, no telemetry.
@@ -10,7 +12,7 @@ Run it inside any git repository, or pass a path: `npx ramulus ~/code/app`. Run 
 
 ![Ramulus in use: opening three repositories, staging one change block, an AI agent drafting the commit message, dragging a branch onto main to merge it, switching to a color scheme from a link, and jumping to another repository](docs/demo.gif)
 
-[Download the demo in full quality (MP4, 1.4 MB)](https://github.com/a-ahandani/ramulus/raw/main/docs/demo.mp4)
+[Download the demo in full quality (MP4, 1.4 MB)](https://github.com/a-ahandani/ramulus/raw/main/docs/demo.mp4) · [Website](https://a-ahandani.github.io/ramulus/)
 
 ## Why Ramulus
 
@@ -83,35 +85,13 @@ Use Ctrl instead of ⌘ on Windows and Linux.
 
 ### In the browser, nothing installed
 
-[a-ahandani.github.io/ramulus](https://a-ahandani.github.io/ramulus/) runs the same UI with git reimplemented in JavaScript over the File System Access API (Chrome and Edge). It is slower on large repositories, cannot use SSH, and has no rebase, cherry-pick or revert. Details in `web/README.md`.
-
-### Native macOS app
-
-A separate native client written in Rust with egui and libgit2. It covers the graph, staging and day-to-day operations; repository tabs, the diff window and the newer look currently live in the browser UI.
-
-Get `Ramulus-<version>-macos-arm64.dmg` from [Releases](https://github.com/a-ahandani/ramulus/releases), open it and drag `Ramulus.app` to Applications. Until the build is notarized, macOS reports a downloaded copy as damaged; clear the download flag once:
-
-```sh
-xattr -d com.apple.quarantine /Applications/Ramulus.app
-```
-
-To build it yourself you need Rust and `git`:
-
-```sh
-git clone https://github.com/a-ahandani/ramulus.git && cd ramulus
-scripts/bundle-mac.sh --install     # builds Ramulus.app and the .dmg, copies the app to /Applications
-cargo install --path . && ramulus /path/to/repo   # or just the binary
-```
-
-`RAMULUS_SIGN_IDENTITY` and `RAMULUS_NOTARY_PROFILE` make the bundle script produce a signed, notarized build.
+[a-ahandani.github.io/ramulus/app](https://a-ahandani.github.io/ramulus/app/) runs the same UI with git reimplemented in JavaScript over the File System Access API (Chrome and Edge). It is slower on large repositories, cannot use SSH, and has no rebase, cherry-pick or revert. Details in `web/README.md`.
 
 ## Develop
 
 ```sh
 cd web && npm install && npm run dev   # browser UI with hot reload, served over the helper
 npm test                               # in web/ and cli/
-cargo run -- /path/to/repo             # native app
-cargo test
 ```
 
 `npm run dev` serves this repository by default; set `RAMULUS_REPO=/path/to/repo` for another one. Discard and Save write real files, so point it at a scratch clone when trying those. Design decisions are written down in `docs/ux.md`.

@@ -2,7 +2,7 @@ name: Web
 on:
   push:
     branches: [main]
-    paths: ['web/**', '.github/workflows/web.yml']
+    paths: ['web/**', 'site/**', '.github/workflows/web.yml']
   workflow_dispatch:
 permissions:
   contents: read
@@ -28,10 +28,11 @@ jobs:
       - run: npm test
       - run: npm run build
         env:
-          BASE_PATH: /ramulus/
+          BASE_PATH: /ramulus/app/
+      - run: mkdir ../_site && cp -R ../site/. ../_site/ && cp -R dist ../_site/app
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: web/dist
+          path: _site
   deploy:
     needs: build
     runs-on: ubuntu-latest
