@@ -373,7 +373,7 @@ export function Shell() {
             </div>
             <div class="welcome">
               <h1>
-                <Icon name="source-control" />
+                <span class="brand-mark" aria-hidden="true" />
                 Ramulus
               </h1>
               <p>Every branch of your repository, in one graph.{helper ? '' : ' Runs entirely in this browser tab.'}</p>

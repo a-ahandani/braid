@@ -1,4 +1,4 @@
-<img src="site/icon.svg" alt="The Ramulus icon, a gold stick insect with violet legs" width="96" height="96" />
+<img src="site/icon.svg" alt="The Ramulus icon, a stick insect" width="96" height="96" />
 
 # Ramulus
 
