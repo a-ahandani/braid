@@ -8,7 +8,7 @@ import * as ai from '../lib/ai.js'
 import { trimTail } from '../lib/term.js'
 import { createServer } from '../lib/server.js'
 
-const root = realpathSync(mkdtempSync(join(tmpdir(), 'braid-ai-test-')))
+const root = realpathSync(mkdtempSync(join(tmpdir(), 'ramulus-ai-test-')))
 const bin = join(root, 'bin')
 const repo = join(root, 'repo')
 const PATH = `${bin}${delimiter}${process.env.PATH}`
@@ -80,7 +80,7 @@ describe('AI through the helper', () => {
   let base
   const saved = process.env.PATH
   const call = (op, body = {}) =>
-    fetch(`${base}/api/${op}`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-braid-token': 't'.repeat(32) }, body: JSON.stringify(body) }).then((r) => r.json())
+    fetch(`${base}/api/${op}`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-ramulus-token': 't'.repeat(32) }, body: JSON.stringify(body) }).then((r) => r.json())
 
   before(async () => {
     process.env.PATH = PATH
@@ -123,9 +123,9 @@ describe('AI through the helper', () => {
         seen += decoder.decode(value)
       }
     }
-    await call('termInput', { data: 'hello braid\r' })
-    await until('hello braid')
-    assert.match(seen, /hello braid/)
+    await call('termInput', { data: 'hello ramulus\r' })
+    await until('hello ramulus')
+    assert.match(seen, /hello ramulus/)
     assert.equal((await call('termStart', { agent: 'claude', cols: 100, rows: 30 })).result.fresh, false)
     await call('termStop')
     await until('event: exit')

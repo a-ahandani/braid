@@ -1,22 +1,24 @@
-# Braid
+# Ramulus
 
 A local-first Git GUI. Every branch in one graph, editor-grade diffs, and your repositories in a sidebar. No account, no cloud, no telemetry.
 
 ```sh
-npx braid
+npx ramulus
 ```
 
-Run it inside any git repository, or pass a path: `npx braid ~/code/app`. Run it in a folder that holds several repositories, such as `~/code`, and it offers to open each one in the sidebar. Run it in a repository that has others in its subfolders, and it offers those too. Braid starts a small server on 127.0.0.1 on top of the `git` you already have and opens the UI in your browser. It needs Node 20 or newer and `git`, and works on macOS, Windows and Linux.
+Run it inside any git repository, or pass a path: `npx ramulus ~/code/app`. Run it in a folder that holds several repositories, such as `~/code`, and it offers to open each one in the sidebar. Run it in a repository that has others in its subfolders, and it offers those too. Ramulus starts a small server on 127.0.0.1 on top of the `git` you already have and opens the UI in your browser. It needs Node 20 or newer and `git`, and works on macOS, Windows and Linux.
 
-![Braid in use: opening three repositories, staging one change block, an AI agent drafting the commit message, dragging a branch onto main to merge it, switching to a color scheme from a link, and jumping to another repository](docs/demo.gif)
+![Ramulus in use: opening three repositories, staging one change block, an AI agent drafting the commit message, dragging a branch onto main to merge it, switching to a color scheme from a link, and jumping to another repository](docs/demo.gif)
 
-[Download the demo in full quality (MP4, 1.4 MB)](https://github.com/a-ahandani/braid/raw/main/docs/demo.mp4)
+[Download the demo in full quality (MP4, 1.4 MB)](https://github.com/a-ahandani/ramulus/raw/main/docs/demo.mp4)
 
-## Why Braid
+## Why Ramulus
 
 - **Your git, unchanged.** Every operation runs through the git binary you already use, so SSH keys, credential helpers, hooks and LFS behave exactly as they do in the terminal.
 - **Nothing leaves your machine unless you ask.** The server listens on 127.0.0.1 and every request carries a per-run token. The only outside requests are your own git remotes, avatar lookups on gravatar.com, and, if you turn it on, the AI agent you already use.
 - **One command.** No installer, no sign-in, no license key. Close the terminal and it is gone.
+
+Ramulus is Latin for a small branch.
 
 ## Features
 
@@ -53,7 +55,7 @@ Run it inside any git repository, or pass a path: `npx braid ~/code/app`. Run it
 
 ### Your AI agent, if you want one
 
-- Braid looks for Claude Code, Codex, Gemini CLI and opencode on your PATH and asks before using any of them. Pick one if several are installed. Each uses its own sign-in, so there is no API key to add.
+- Ramulus looks for Claude Code, Codex, Gemini CLI and opencode on your PATH and asks before using any of them. Pick one if several are installed. Each uses its own sign-in, so there is no API key to add.
 - The sparkle in the commit box drafts a message from the staged changes, and the one in the new-branch dialog suggests a name. Both fill the field for you to review and edit.
 - The agent terminal (⌃\`) runs the agent's own interactive tool in a panel at the bottom, in the repository's folder, so you can chat with it as you would in your own terminal. The sparkle on a conflicted file pastes a resolve prompt into it without sending it, so you can change it first. The agent then edits the file with its own approvals, and the result shows up as an unstaged change for you to review.
 - Every prompt can be edited in AI agent settings in the command palette.
@@ -81,27 +83,27 @@ Use Ctrl instead of ⌘ on Windows and Linux.
 
 ### In the browser, nothing installed
 
-[a-ahandani.github.io/braid](https://a-ahandani.github.io/braid/) runs the same UI with git reimplemented in JavaScript over the File System Access API (Chrome and Edge). It is slower on large repositories, cannot use SSH, and has no rebase, cherry-pick or revert. Details in `web/README.md`.
+[a-ahandani.github.io/ramulus](https://a-ahandani.github.io/ramulus/) runs the same UI with git reimplemented in JavaScript over the File System Access API (Chrome and Edge). It is slower on large repositories, cannot use SSH, and has no rebase, cherry-pick or revert. Details in `web/README.md`.
 
 ### Native macOS app
 
 A separate native client written in Rust with egui and libgit2. It covers the graph, staging and day-to-day operations; repository tabs, the diff window and the newer look currently live in the browser UI.
 
-Get `Braid-<version>-macos-arm64.dmg` from [Releases](https://github.com/a-ahandani/braid/releases), open it and drag `Braid.app` to Applications. Until the build is notarized, macOS reports a downloaded copy as damaged; clear the download flag once:
+Get `Ramulus-<version>-macos-arm64.dmg` from [Releases](https://github.com/a-ahandani/ramulus/releases), open it and drag `Ramulus.app` to Applications. Until the build is notarized, macOS reports a downloaded copy as damaged; clear the download flag once:
 
 ```sh
-xattr -d com.apple.quarantine /Applications/Braid.app
+xattr -d com.apple.quarantine /Applications/Ramulus.app
 ```
 
 To build it yourself you need Rust and `git`:
 
 ```sh
-git clone https://github.com/a-ahandani/braid.git && cd braid
-scripts/bundle-mac.sh --install     # builds Braid.app and the .dmg, copies the app to /Applications
-cargo install --path . && braid /path/to/repo   # or just the binary
+git clone https://github.com/a-ahandani/ramulus.git && cd ramulus
+scripts/bundle-mac.sh --install     # builds Ramulus.app and the .dmg, copies the app to /Applications
+cargo install --path . && ramulus /path/to/repo   # or just the binary
 ```
 
-`BRAID_SIGN_IDENTITY` and `BRAID_NOTARY_PROFILE` make the bundle script produce a signed, notarized build.
+`RAMULUS_SIGN_IDENTITY` and `RAMULUS_NOTARY_PROFILE` make the bundle script produce a signed, notarized build.
 
 ## Develop
 
@@ -112,7 +114,7 @@ cargo run -- /path/to/repo             # native app
 cargo test
 ```
 
-`npm run dev` serves this repository by default; set `BRAID_REPO=/path/to/repo` for another one. Discard and Save write real files, so point it at a scratch clone when trying those. Design decisions are written down in `docs/ux.md`.
+`npm run dev` serves this repository by default; set `RAMULUS_REPO=/path/to/repo` for another one. Discard and Save write real files, so point it at a scratch clone when trying those. Design decisions are written down in `docs/ux.md`.
 
 To release the npm helper, run `npm version patch --no-git-tag-version` in `cli/`, push that to main, then push a matching tag such as `cli-v0.5.1`. The Publish workflow runs the tests on Linux, macOS and Windows, then publishes to npm through trusted publishing, with provenance and no stored token.
 

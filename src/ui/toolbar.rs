@@ -117,7 +117,7 @@ pub fn show(root: &mut egui::Ui, app: &mut App, actions: &mut Vec<Action>) {
 pub fn welcome(ui: &mut egui::Ui, recent: &[PathBuf], actions: &mut Vec<Action>) {
     ui.vertical_centered(|ui| {
         ui.add_space(ui.available_height() * 0.25);
-        ui.label(RichText::new("Braid").size(30.0).strong().color(theme::TEXT_BRIGHT));
+        ui.label(RichText::new("Ramulus").size(30.0).strong().color(theme::TEXT_BRIGHT));
         ui.label(RichText::new("Every branch of your repository, in one graph").color(theme::TEXT_SECONDARY));
         ui.add_space(20.0);
         if ui.add(Button::new(RichText::new("Open a repository folder").size(14.0)).min_size(egui::vec2(220.0, 36.0))).clicked() {

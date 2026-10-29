@@ -9,7 +9,7 @@ import { createServer } from '../lib/server.js'
 
 const args = process.argv.slice(2)
 if (args.includes('-h') || args.includes('--help')) {
-  console.log('Usage: braid [path] [--port N] [--no-open]\n\nServes the Braid UI for the repository at path (default: current directory).')
+  console.log('Usage: ramulus [path] [--port N] [--no-open]\n\nServes the Ramulus UI for the repository at path (default: current directory).')
   process.exit(0)
 }
 const portArg = args.indexOf('--port')
@@ -42,7 +42,7 @@ for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP']) {
 }
 server.listen(port, '127.0.0.1', () => {
   const url = `http://127.0.0.1:${server.address().port}/#${token}`
-  console.log(`${dir ? `Braid is serving ${dir}` : `${root} is not a git repository. Pick repositories in the browser.`}\n${url}\nPress Ctrl+C to stop.`)
+  console.log(`${dir ? `Ramulus is serving ${dir}` : `${root} is not a git repository. Pick repositories in the browser.`}\n${url}\nPress Ctrl+C to stop.`)
   if (!noOpen) {
     const cmd = process.platform === 'darwin' ? 'open' : process.platform === 'win32' ? 'cmd' : 'xdg-open'
     const cmdArgs = process.platform === 'win32' ? ['/c', 'start', '', url] : [url]

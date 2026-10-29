@@ -6,7 +6,7 @@ import { join } from 'node:path'
 import { after, before, describe, it } from 'node:test'
 import { createServer } from '../lib/server.js'
 
-const root = realpathSync(mkdtempSync(join(tmpdir(), 'braid-srv-')))
+const root = realpathSync(mkdtempSync(join(tmpdir(), 'ramulus-srv-')))
 const repo = (name) => {
   const d = join(root, name)
   execFileSync('git', ['init', '-q', '-b', 'main', d])
@@ -19,7 +19,7 @@ let server
 let base
 
 const call = async (op, body = {}, tok = token) => {
-  const res = await fetch(`${base}/api/${op}`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-braid-token': tok }, body: JSON.stringify(body) })
+  const res = await fetch(`${base}/api/${op}`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-ramulus-token': tok }, body: JSON.stringify(body) })
   return res.json()
 }
 
@@ -40,7 +40,7 @@ describe('helper server', () => {
     const bare = createServer({ root, uiDir: root, token, stateFile: join(root, 'state2', 'recent.json') })
     await new Promise((done) => bare.listen(0, '127.0.0.1', done))
     const at = `http://127.0.0.1:${bare.address().port}`
-    const post = (op, body = {}) => fetch(`${at}/api/${op}`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-braid-token': token }, body: JSON.stringify(body) }).then((r) => r.json())
+    const post = (op, body = {}) => fetch(`${at}/api/${op}`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-ramulus-token': token }, body: JSON.stringify(body) }).then((r) => r.json())
     try {
       assert.equal((await post('repos')).result.current, null)
       assert.deepEqual((await post('findRepos')).result.repos.map((r) => r.name), ['first', 'second'])

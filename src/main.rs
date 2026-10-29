@@ -470,7 +470,7 @@ impl App {
     }
 
     fn debug_screenshot(&mut self, ctx: &egui::Context) {
-        let Some(path) = std::env::var_os("BRAID_SHOT") else { return };
+        let Some(path) = std::env::var_os("RAMULUS_SHOT") else { return };
         if self.shot_requested {
             return;
         }
@@ -709,11 +709,11 @@ impl eframe::App for App {
 fn main() -> eframe::Result {
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
-            .with_title("Braid")
+            .with_title("Ramulus")
             .with_app_id("dev.ahandani.ramulus")
             .with_inner_size([1360.0, 860.0])
             .with_min_inner_size([900.0, 560.0]),
         ..Default::default()
     };
-    eframe::run_native("Braid", options, Box::new(|cc| Ok(Box::new(App::new(cc)))))
+    eframe::run_native("Ramulus", options, Box::new(|cc| Ok(Box::new(App::new(cc)))))
 }
