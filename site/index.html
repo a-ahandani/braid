@@ -4,7 +4,7 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Ramulus · Every branch, in one graph</title>
-<meta name="description" content="A local Git GUI on the git you already have. Run npx ramulus in any repository. No account, no cloud." />
+<meta name="description" content="A local Git GUI that works with the AI agent you already use. Run npx ramulus in any repository. No account, no Ramulus server." />
 <meta name="theme-color" content="#121212" />
 <link rel="icon" href="favicon.ico" sizes="48x48" />
 <link rel="icon" href="favicon.svg" type="image/svg+xml" />
@@ -12,7 +12,7 @@
 <link rel="manifest" href="site.webmanifest" />
 <meta property="og:type" content="website" />
 <meta property="og:title" content="Ramulus · Every branch, in one graph" />
-<meta property="og:description" content="A local Git GUI on the git you already have. Run npx ramulus in any repository." />
+<meta property="og:description" content="A local Git GUI that works with the AI agent you already use. No account." />
 <meta property="og:image" content="https://a-ahandani.github.io/ramulus/og.png" />
 <meta property="og:url" content="https://a-ahandani.github.io/ramulus/" />
 <meta name="twitter:card" content="summary_large_image" />
@@ -30,40 +30,48 @@
 
 <main>
   <section class="hero wrap">
-    <img class="hero-mark" src="mark.svg" alt="The Ramulus mark, a stick insect" width="132" height="108" />
-    <h1>Every branch, in one graph.</h1>
-    <p class="lede">A local Git GUI on the git you already have.</p>
-    <div class="cta">
-      <div class="cmd" role="group" aria-label="Install command">
-        <code><span class="prompt">$</span> npx ramulus</code>
-        <button type="button" class="copy" data-copy="npx ramulus" aria-label="Copy the command">Copy</button>
+    <div class="hero-text">
+      <img class="hero-mark" src="mark.svg" alt="The Ramulus mark, a stick insect" width="132" height="108" />
+      <h1>Every branch, in one graph.</h1>
+      <p class="lede">A local Git GUI that works with the AI agent you already use. No account.</p>
+      <div class="cta">
+        <div class="cmd" role="group" aria-label="Install command">
+          <code><span class="prompt">$</span> npx ramulus</code>
+          <button type="button" class="copy" data-copy="npx ramulus" aria-label="Copy the command">Copy</button>
+        </div>
+        <a class="text-link" href="https://github.com/a-ahandani/ramulus">GitHub</a>
       </div>
-      <a class="text-link" href="https://github.com/a-ahandani/ramulus">GitHub</a>
+      <p class="req">Needs Node 20+ and git.</p>
     </div>
-    <p class="req">Needs Node 20+ and git.</p>
+
+    <div id="demo" role="region" aria-label="Product demo">
+      <div class="player">
+        <video id="video" muted playsinline preload="metadata" poster="videos/graph.jpg" aria-label="Ramulus demo video"></video>
+        <button type="button" class="toggle" id="toggle" aria-label="Pause the video">Pause</button>
+      </div>
+      <ol class="chapters" id="chapters">
+        <li><button type="button" data-video="graph">Every branch, one graph</button></li>
+        <li><button type="button" data-video="stage">Stage exactly what you mean</button></li>
+        <li><button type="button" data-video="agent">Your agent fixes the conflict</button></li>
+        <li><button type="button" data-video="repos">All your repos, your colors</button></li>
+      </ol>
+    </div>
   </section>
 
-  <section id="demo" class="demo wrap" aria-label="Product demo">
-    <div class="player">
-      <video id="video" muted playsinline preload="metadata" poster="videos/graph.jpg" aria-label="Ramulus demo video"></video>
-      <button type="button" class="toggle" id="toggle" aria-label="Pause the video">Pause</button>
+  <section id="local" class="wrap" aria-label="Yours, start to finish">
+    <div class="pillars">
+      <article><h2>Your local agent</h2><p>Claude Code, Codex, Gemini CLI or opencode, as you already have them. No API key.</p></article>
+      <article><h2>Full control</h2><p>Real git on your disk. Undo a rebase. Force push asks first.</p></article>
+      <article><h2>No account</h2><p>No sign-up, no login, nothing to pay for.</p></article>
+      <article><h2>All local</h2><p>Runs on your machine. No Ramulus server, no telemetry.</p></article>
     </div>
-    <ol class="chapters" id="chapters">
-      <li><button type="button" data-video="graph">Every branch, one graph</button></li>
-      <li><button type="button" data-video="stage">Stage exactly what you mean</button></li>
-      <li><button type="button" data-video="agent">Your agent fixes the conflict</button></li>
-      <li><button type="button" data-video="repos">All your repos, your colors</button></li>
-    </ol>
   </section>
 
   <section id="features" class="wrap">
     <div class="grid">
       <article><h3>Readable graph</h3><p>Lanes, stashes and ahead or behind at a glance.</p></article>
       <article><h3>Real editor diffs</h3><p>Stage one block. Edit in place.</p></article>
-      <article><h3>Your AI agent</h3><p>Claude Code, Codex, Gemini CLI or opencode. No API key.</p></article>
-      <article><h3>Safe by default</h3><p>Undo a rebase. Force push asks first.</p></article>
       <article><h3>All your repos</h3><p>Open a folder of them. Jump with ⌘⇧A.</p></article>
-      <article><h3>Private</h3><p>Runs on your machine. No account, no telemetry.</p></article>
     </div>
   </section>
 
