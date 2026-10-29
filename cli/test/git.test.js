@@ -245,8 +245,7 @@ describe('switching to a remote branch', () => {
   before(() => {
     root = mkdtempSync(join(tmpdir(), 'ramulus-remote-'))
     g(root, 'init', '-q', '--bare', '-b', 'main', 'remote.git')
-    g(root, 'clone', '-q', 'remote.git', 'mine')
-    g(mine(), 'config', 'core.autocrlf', 'false')
+    g(root, 'clone', '-q', '-c', 'core.autocrlf=false', 'remote.git', 'mine')
     writeFileSync(join(mine(), 'a.txt'), 'one\n')
     writeFileSync(join(mine(), 'b.txt'), 'b\n')
     g(mine(), 'add', '.')
@@ -254,8 +253,7 @@ describe('switching to a remote branch', () => {
     g(mine(), 'push', '-q', 'origin', 'main')
     g(mine(), 'switch', '-q', '-c', 'feature')
     g(mine(), 'push', '-q', '-u', 'origin', 'feature')
-    g(root, 'clone', '-q', 'remote.git', 'theirs')
-    g(theirs(), 'config', 'core.autocrlf', 'false')
+    g(root, 'clone', '-q', '-c', 'core.autocrlf=false', 'remote.git', 'theirs')
   })
 
   after(() => rmSync(root, { recursive: true, force: true }))
