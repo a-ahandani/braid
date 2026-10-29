@@ -17,7 +17,7 @@ export async function demoRepo(): Promise<Ctx> {
   await git.init({ fs, dir, defaultBranch: 'main' })
   await git.setConfig({ fs, dir, path: 'user.name', value: author.name })
   await git.setConfig({ fs, dir, path: 'user.email', value: author.email })
-  await write('README.md', '# Demo project\n\nA small repository to try Ramulus.\n')
+  await write('README.md', '# Demo project\n\nA small repository to try Braid.\n')
   await git.add({ fs, dir, filepath: 'README.md' })
   await save('Initial commit')
   await write('src.js', 'export const answer = 42\n')
@@ -43,7 +43,7 @@ export async function demoRepo(): Promise<Ctx> {
   await git.add({ fs, dir, filepath: 'cache.js' })
   await save('Sketch a cache', { name: 'Ana Kim', email: 'ana@example.com' })
   await git.checkout({ fs, dir, ref: 'main' })
-  await write('README.md', '# Demo project\n\nA small repository to try Ramulus.\n\nEdit me, stage me, commit me.\n')
+  await write('README.md', '# Demo project\n\nA small repository to try Braid.\n\nEdit me, stage me, commit me.\n')
   await write('notes.txt', 'untracked scratch file\n')
   return { fs, dir, cache: {} }
 }

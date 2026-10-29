@@ -113,7 +113,7 @@ export function Shell() {
       .finally(() => (prefsReady.current = true))
   }, [])
   useEffect(() => {
-    document.title = current ? `${current.name} · Ramulus` : 'Ramulus'
+    document.title = current ? `${current.name} · Braid` : 'Braid'
   }, [current])
   useEffect(() => {
     localStorage.setItem('ramulus.sidebar', docked ? 'docked' : 'auto')
@@ -369,12 +369,12 @@ export function Shell() {
         {tabs.length === 0 && (
           <div class="app">
             <div class="toolbar">
-              <span class="repo">Ramulus</span>
+              <span class="repo">Braid</span>
             </div>
             <div class="welcome">
               <h1>
                 <Icon name="source-control" />
-                Ramulus
+                Braid
               </h1>
               <p>Every branch of your repository, in one graph.{helper ? '' : ' Runs entirely in this browser tab.'}</p>
               <div style={{ display: 'flex', gap: '8px' }}>
@@ -416,7 +416,7 @@ export function Shell() {
                 <>
                   <p class="note">Nothing leaves your machine except avatar lookups on gravatar.com and, when you use them, fetch, pull and push through the CORS proxy you set under Settings.</p>
                   <p class="note">
-                    For full speed and your SSH keys, run <code>npx ramulus</code> inside a repository instead.
+                    For full speed and your SSH keys, run <code>npx braid</code> inside a repository instead.
                   </p>
                 </>
               )}
