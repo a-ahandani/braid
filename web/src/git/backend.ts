@@ -39,10 +39,13 @@ export interface FileVersions {
   binary: boolean
 }
 
+export type TermKind = 'agent' | 'shell'
+
 export interface Backend {
   native: boolean
   load(limit: number): Promise<RepoData>
   status(): Promise<WorkStatus>
+  files(): Promise<string[]>
   commitFiles(oid: string): Promise<FileChange[]>
   fileVersions(area: DiffArea, path: string): Promise<FileVersions>
   writeIndex(path: string, content: string, expected?: string): Promise<void>
@@ -80,9 +83,10 @@ export interface Backend {
   setAi?(settings: AiSettings): Promise<void>
   aiContext?(task: 'commit' | 'branch', at?: string): Promise<string>
   aiAsk?(agent: string, prompt: string, signal: AbortSignal): Promise<string>
-  termStart?(agent: string, cols: number, rows: number): Promise<{ agent: string; fresh: boolean }>
-  termInput?(data: string): Promise<void>
-  termResize?(cols: number, rows: number): Promise<void>
-  termStop?(): Promise<void>
-  termStream?(onData: (data: string) => void, onExit: () => void): () => void
+  termStart?(id: string, kind: TermKind, agent: string | undefined, cols: number, rows: number): Promise<{ agent?: string; fresh: boolean }>
+  termList?(): Promise<{ id: string; kind: TermKind; agent?: string }[]>
+  termInput?(id: string, data: string): Promise<void>
+  termResize?(id: string, cols: number, rows: number): Promise<void>
+  termStop?(id?: string): Promise<void>
+  termStream?(id: string, onData: (data: string) => void, onExit: () => void): () => void
 }

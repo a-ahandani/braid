@@ -41,7 +41,7 @@ export interface DetailProps {
   onAiFix?: (path: string) => void
 }
 
-function kindColor(k: FileChange['kind']): string {
+export function kindColor(k: FileChange['kind']): string {
   return k === 'A' ? 'var(--git-added)' : k === '?' ? 'var(--git-untracked)' : k === 'D' ? 'var(--git-deleted)' : 'var(--git-modified)'
 }
 
@@ -82,15 +82,15 @@ function FileRow({ f, label, depth, selected, onClick, actions, onMenu }: { f: F
   )
 }
 
-interface TreeNode {
+export interface TreeNode<T = FileChange> {
   name: string
   path: string
-  children: Map<string, TreeNode>
-  file?: FileChange
+  children: Map<string, TreeNode<T>>
+  file?: T
 }
 
-function buildTree(files: FileChange[]): TreeNode {
-  const root: TreeNode = { name: '', path: '', children: new Map() }
+export function buildTree<T extends { path: string }>(files: T[]): TreeNode<T> {
+  const root: TreeNode<T> = { name: '', path: '', children: new Map() }
   for (const f of files) {
     const parts = f.path.split('/')
     let node = root
@@ -105,7 +105,7 @@ function buildTree(files: FileChange[]): TreeNode {
     })
     node.file = f
   }
-  const collapse = (n: TreeNode): TreeNode => {
+  const collapse = (n: TreeNode<T>): TreeNode<T> => {
     for (const [k, c] of n.children) n.children.set(k, collapse(c))
     if (!n.file && n.children.size === 1 && n.path) {
       const only = [...n.children.values()][0]
@@ -165,7 +165,7 @@ export function DetailPanel(p: DetailProps) {
   if (p.commit) {
     const c = p.commit
     return (
-      <div class="right">
+      <div class="detail">
         <div class="detail-head">
           <h2>{c.summary}</h2>
           <div class="who">
@@ -216,7 +216,7 @@ export function DetailPanel(p: DetailProps) {
   const conflicts = s.unstaged.filter((f) => f.conflict).length
   const autostash = !state && p.onDropAutostash && p.data.stashes.some((x) => /autostash$/.test(x.message))
   return (
-    <div class="right">
+    <div class="detail">
       {autostash && (
         <div class="banner">
           <span>{conflicts > 0 ? `Your uncommitted changes conflicted when they were put back. Resolve and stage ${conflicts === 1 ? 'the file' : `the ${conflicts} files`} marked !, then press Done.` : 'A saved copy of your uncommitted changes is still in the stash. Press Done once your files look right.'}</span>

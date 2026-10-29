@@ -39,7 +39,8 @@ Ramulus is Latin for a small branch.
 
 ![A floating diff window with two file tabs open beside the staging lists](docs/screenshots/diff.png)
 
-- Every file you click opens as a tab in one floating diff window. Move it, resize it from any edge, or maximize it. The graph and the file lists stay usable underneath.
+- Every file you click opens as a tab in one diff window that fills the space beside the left panel and follows it as panels change. Move it, resize it from any edge, or maximize it. Unchanged regions are collapsed until you open them.
+- The left panel has three tabs: Branches, Changes (the commit box, or the selected commit's files) and Files, which shows the whole working tree with changed files marked. A file opened from Files opens in a plain editor instead of a diff.
 - The diff runs on Monaco, the open-source editor component: side by side or inline, a +/− gutter, folded unchanged regions, syntax highlighting and word wrap.
 - Stage, unstage or discard one change block from the small toolbar beside it. Edit the working-tree side and save with ⌘S.
 - Staging writes whole file contents rather than patches, so line endings and byte-order marks survive exactly. If a file changed underneath you, the write is refused instead of guessed.
@@ -59,7 +60,7 @@ Ramulus is Latin for a small branch.
 
 - Ramulus looks for Claude Code, Codex, Gemini CLI and opencode on your PATH and asks before using any of them. Pick one if several are installed. Each uses its own sign-in, so there is no API key to add.
 - The sparkle in the commit box drafts a message from the staged changes, and the one in the new-branch dialog suggests a name. Both fill the field for you to review and edit.
-- The agent terminal (⌃\`) runs the agent's own interactive tool in a panel at the bottom, in the repository's folder, so you can chat with it as you would in your own terminal. The sparkle on a conflicted file pastes a resolve prompt into it without sending it, so you can change it first. The agent then edits the file with its own approvals, and the result shows up as an unstaged change for you to review.
+- The Agent button in the top bar (or ⌃\`) opens a panel at the bottom that runs the agent's own interactive tool in the repository's folder, so you can chat with it as you would in your own terminal. Add more tabs with +, for another agent or a plain terminal, and maximize the panel when you want the whole window. The sparkle on a conflicted file pastes a resolve prompt into it without sending it, so you can change it first. The agent then edits the file with its own approvals, and the result shows up as an unstaged change for you to review.
 - Every prompt can be edited in AI agent settings in the command palette.
 
 ### Keyboard
@@ -75,8 +76,8 @@ Ramulus is Latin for a small branch.
 | `⌘S` | Save edits in the diff |
 | `⌘B` | New branch from HEAD |
 | `⌘L` | Fetch every remote |
-| `⌘J` / `⌘K` | Toggle the left / right panel |
-| `` ⌃` `` | Show or hide the agent terminal |
+| `⌘J` | Toggle the left panel |
+| `` ⌃` `` | Show or hide the agent panel |
 | `?` | All shortcuts |
 
 Use Ctrl instead of ⌘ on Windows and Linux.

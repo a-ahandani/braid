@@ -15,6 +15,24 @@ export function Icon({ name }: { name: string }) {
   return <i class={`codicon codicon-${name}`} aria-hidden="true" />
 }
 
+export function BrandMark() {
+  return <span class="brand-mark" aria-hidden="true" />
+}
+
+export function BrandLinks() {
+  return (
+    <>
+      <span class="sep" />
+      <a class="tb-link" href="https://a-ahandani.github.io/ramulus/" target="_blank" rel="noreferrer" title="Ramulus website" aria-label="Ramulus website">
+        <Icon name="globe" />
+      </a>
+      <a class="tb-link" href="https://github.com/a-ahandani/ramulus" target="_blank" rel="noreferrer" title="Ramulus on GitHub" aria-label="Ramulus on GitHub">
+        <Icon name="github" />
+      </a>
+    </>
+  )
+}
+
 export function laneColor(col: number): string {
   return `var(--lane-${col % LANES})`
 }

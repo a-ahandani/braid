@@ -40,6 +40,7 @@ export function httpBackend(base: string, token: string, repo?: string): Backend
       return { ...d, refsByOid: new Map(Object.entries(d.refsByOid)) }
     },
     status: () => call('status'),
+    files: () => call('files'),
     commitFiles: (oid) => call('commitFiles', { oid }),
     fileVersions: (area, path) => call('fileVersions', { area, path }),
     writeIndex: (path, content, expected) => call('writeIndex', { path, content, expected }),
@@ -76,12 +77,13 @@ export function httpBackend(base: string, token: string, repo?: string): Backend
     setAi: (settings) => call('setAi', { settings }),
     aiContext: (task, at) => call('aiContext', { task, at }),
     aiAsk: (agent, prompt, signal) => call('aiAsk', { agent, prompt }, signal),
-    termStart: (agent, cols, rows) => call('termStart', { agent, cols, rows }),
-    termInput: (data) => call('termInput', { data }),
-    termResize: (cols, rows) => call('termResize', { cols, rows }),
-    termStop: () => call('termStop'),
-    termStream: (onData, onExit) => {
-      const es = new EventSource(`${base}/api/term?token=${token}${repo ? `&repo=${encodeURIComponent(repo)}` : ''}`)
+    termStart: (id, kind, agent, cols, rows) => call('termStart', { id, kind, agent, cols, rows }),
+    termList: () => call('termList'),
+    termInput: (id, data) => call('termInput', { id, data }),
+    termResize: (id, cols, rows) => call('termResize', { id, cols, rows }),
+    termStop: (id) => call('termStop', id ? { id } : { all: true }),
+    termStream: (id, onData, onExit) => {
+      const es = new EventSource(`${base}/api/term?token=${token}&id=${id}${repo ? `&repo=${encodeURIComponent(repo)}` : ''}`)
       es.onmessage = (e) => onData(JSON.parse(e.data))
       es.addEventListener('exit', () => {
         es.close()

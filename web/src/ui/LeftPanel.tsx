@@ -1,6 +1,8 @@
+import type { JSX } from 'preact'
 import { useState } from 'preact/hooks'
 import type { RepoData } from '../git/repo'
 import { Icon, laneColor } from './bits'
+import { FileExplorer } from './FileExplorer'
 
 export interface LeftProps {
   data: RepoData
@@ -15,7 +17,22 @@ export interface LeftProps {
   onRemoteMenu: (e: MouseEvent, name: string) => void
   onTagMenu: (e: MouseEvent, name: string, oid: string) => void
   onStashMenu: (e: MouseEvent, index: number, message: string) => void
+  loadFiles: () => Promise<string[]>
+  stamp: unknown
+  selectedFile?: string
+  onOpenFile: (path: string) => void
+  mode: LeftMode
+  onMode: (mode: LeftMode) => void
+  detail: JSX.Element
 }
+
+export type LeftMode = 'commit' | 'branches' | 'files'
+
+const MODES: { id: LeftMode; label: string; icon: string }[] = [
+  { id: 'branches', label: 'Branches', icon: 'git-branch' },
+  { id: 'commit', label: 'Changes', icon: 'source-control' },
+  { id: 'files', label: 'Files', icon: 'files' },
+]
 
 function Section({ title, count, open, onToggle }: { title: string; count: number; open: boolean; onToggle: () => void }) {
   return (
@@ -58,8 +75,27 @@ export function LeftPanel(p: LeftProps) {
   const local = p.data.local.filter((b) => show(b.name)).sort((a, b) => Number(b.isHead) - Number(a.isHead))
   const tags = p.data.tags.filter((t) => show(t.name))
   const stashes = p.data.stashes.filter((s) => show(s.message))
+  const modes = (
+    <div class="left-modes" role="tablist" aria-label="Left panel">
+      {MODES.map((m) => (
+        <button key={m.id} role="tab" aria-selected={p.mode === m.id} class={p.mode === m.id ? 'on' : ''} onClick={() => p.onMode(m.id)}>
+          <Icon name={m.icon} />
+          {m.label}
+        </button>
+      ))}
+    </div>
+  )
+  if (p.mode !== 'branches') {
+    return (
+      <div class="left tabbed">
+        {modes}
+        {p.mode === 'commit' ? p.detail : <FileExplorer load={p.loadFiles} status={p.data.status} stamp={p.stamp} selected={p.selectedFile} onOpen={p.onOpenFile} />}
+      </div>
+    )
+  }
   return (
     <div class="left">
+      {modes}
       <div class="left-filter">
         <input placeholder="Filter branches and tags" value={filter} onInput={(e) => setFilter((e.target as HTMLInputElement).value)} />
       </div>

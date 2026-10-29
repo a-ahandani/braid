@@ -169,3 +169,80 @@ export function DiffEditor(p: DiffEditorProps) {
     </div>
   )
 }
+
+export function FileEditor(p: {
+  text: string
+  filename: string
+  look: string
+  wrap: boolean
+  editable: boolean
+  onDirty: (dirty: boolean) => void
+  onSave: () => void
+  handle?: (h: DiffEditorHandle) => void
+}) {
+  const host = useRef<HTMLDivElement>(null)
+  const ed = useRef<{ editor: editor.IStandaloneCodeEditor; setLook: (look: string) => void } | undefined>(undefined)
+  const base = useRef({ version: 0, applying: false })
+  const latest = useRef(p)
+  latest.current = p
+
+  useLayoutEffect(() => {
+    const parent = host.current
+    if (!parent) return
+    let gone = false
+    let dispose = () => {}
+    import('./monaco').then(({ monaco, languageFor, themeFor }) => {
+      if (gone) return
+      const o = latest.current
+      const model = monaco.editor.createModel(o.text, languageFor(o.filename))
+      const code = monaco.editor.create(parent, {
+        model,
+        theme: themeFor(o.look),
+        automaticLayout: true,
+        readOnly: !o.editable,
+        wordWrap: o.wrap ? 'on' : 'off',
+        minimap: { enabled: false },
+        scrollBeyondLastLine: false,
+        fixedOverflowWidgets: true,
+      })
+      base.current.version = model.getAlternativeVersionId()
+      const subs = [
+        model.onDidChangeContent(() => base.current.applying || latest.current.onDirty(model.getAlternativeVersionId() !== base.current.version)),
+        code.addAction({ id: 'ramulus.save', label: 'Save', keybindings: [monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS], run: () => latest.current.onSave() }),
+      ]
+      ed.current = { editor: code, setLook: (look) => monaco.editor.setTheme(themeFor(look)) }
+      latest.current.handle?.({ next: () => {}, prev: () => {}, text: () => model.getValue(undefined, true) })
+      dispose = () => {
+        subs.forEach((s) => s.dispose())
+        code.dispose()
+        model.dispose()
+      }
+    })
+    return () => {
+      gone = true
+      dispose()
+      ed.current = undefined
+    }
+  }, [p.filename, p.editable])
+
+  useEffect(() => {
+    const model = ed.current?.editor.getModel()
+    if (!model || model.getValue(undefined, true) === p.text || model.getAlternativeVersionId() !== base.current.version) return
+    base.current.applying = true
+    model.setValue(p.text)
+    base.current.applying = false
+    base.current.version = model.getAlternativeVersionId()
+    p.onDirty(false)
+  }, [p.text])
+
+  useEffect(() => {
+    ed.current?.editor.updateOptions({ wordWrap: p.wrap ? 'on' : 'off' })
+    ed.current?.setLook(p.look)
+  }, [p.wrap, p.look])
+
+  return (
+    <div class="diff-editor file">
+      <div class="mo-host" ref={host} />
+    </div>
+  )
+}

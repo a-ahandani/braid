@@ -9,8 +9,15 @@ import { createTerminals } from './term.js'
 
 const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.png': 'image/png', '.json': 'application/json' }
 
+const termId = (id) => {
+  if (id === undefined || id === null) return 'main'
+  if (typeof id !== 'string' || !/^[a-z0-9-]{1,40}$/.test(id)) throw new Error('Invalid terminal id')
+  return id
+}
+
 const OPS = {
   load: (dir, b) => git.load(dir, b.limit),
+  files: (dir) => git.files(dir),
   status: (dir) => git.status(dir),
   commitFiles: (dir, b) => git.commitFiles(dir, b.oid),
   fileVersions: (dir, b) => git.fileVersions(dir, b.area, b.path),
@@ -110,10 +117,15 @@ export function createServer({ dir, root = dir, uiDir, token, stateFile = STATE 
   const ops = {
     ...OPS,
     aiContext: (repo, b) => git.aiContext(repo, b.task, { at: b.at }),
-    termStart: async (repo, b) => (await needAi(), terms.start(repo, String(b.agent), b.cols, b.rows)),
-    termInput: (repo, b) => terms.write(repo, b.data),
-    termResize: (repo, b) => terms.resize(repo, b.cols, b.rows),
-    termStop: (repo) => terms.stop(repo),
+    termStart: async (repo, b) => {
+      const kind = b.kind === 'shell' ? 'shell' : 'agent'
+      if (kind === 'agent') await needAi()
+      return terms.start(repo, termId(b.id), kind, String(b.agent ?? ''), b.cols, b.rows)
+    },
+    termList: (repo) => terms.list(repo),
+    termInput: (repo, b) => terms.write(repo, termId(b.id), b.data),
+    termResize: (repo, b) => terms.resize(repo, termId(b.id), b.cols, b.rows),
+    termStop: (repo, b) => terms.stop(repo, b.all ? undefined : termId(b.id)),
     aiAsk: async (repo, b, res) => {
       await needAi()
       const stop = new AbortController()
@@ -185,13 +197,14 @@ export function createServer({ dir, root = dir, uiDir, token, stateFile = STATE 
     }
     if (url.pathname === '/api/term') {
       const repo = url.searchParams.get('repo') || dir
-      if (url.searchParams.get('token') !== token || !known.has(repo)) {
+      const id = url.searchParams.get('id') ?? 'main'
+      if (url.searchParams.get('token') !== token || !known.has(repo) || !/^[a-z0-9-]{1,40}$/.test(id)) {
         res.writeHead(401).end()
         return
       }
       res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-store', connection: 'keep-alive' })
       res.write(': connected\n\n')
-      req.on('close', terms.attach(repo, res))
+      req.on('close', terms.attach(repo, id, res))
       return
     }
     if (url.pathname.startsWith('/api/')) {

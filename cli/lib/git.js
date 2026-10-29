@@ -45,6 +45,10 @@ export function gitProblem(versionText) {
   if (Number(v[1]) < 2 || (Number(v[1]) === 2 && Number(v[2]) < 23)) return `Ramulus needs git 2.23 or newer, and this is git ${v[1]}.${v[2]}. Update it from https://git-scm.com/downloads`
 }
 
+export async function files(dir) {
+  return [...new Set((await run(dir, ['ls-files', '-z'])).stdout.split('\0').filter(Boolean))]
+}
+
 export async function toplevel(dir) {
   return (await run(dir, ['rev-parse', '--show-toplevel'])).stdout.trim()
 }

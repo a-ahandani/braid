@@ -3,7 +3,7 @@ import type { Backend, FileVersions } from '../git/backend'
 import { mixedEol } from '../git/chunk'
 import { Icon, short } from './bits'
 import type { FileSel } from './DetailPanel'
-import { DiffEditor, type ChunkAction, type DiffEditorHandle, type DiffMode } from './DiffEditor'
+import { DiffEditor, FileEditor, type ChunkAction, type DiffEditorHandle, type DiffMode } from './DiffEditor'
 
 export interface DiffOptions {
   wrap: boolean
@@ -15,6 +15,7 @@ export interface DiffTab {
   key: string
   sel: FileSel
   dirty: boolean
+  file?: boolean
 }
 
 interface Geo {
@@ -26,7 +27,7 @@ interface Geo {
 
 type PaneHandle = DiffEditorHandle & { save: () => void }
 
-const GEO_KEY = 'ramulus.diffwin'
+const GEO_KEY = 'ramulus.editorwindow'
 const MIN_W = 420
 const MIN_H = 240
 const EDGES = ['n', 's', 'e', 'w', 'ne', 'nw', 'se', 'sw']
@@ -39,15 +40,23 @@ function fit(g: Geo): Geo {
   return { w, h, x: Math.min(Math.max(g.x, 120 - w), innerWidth - 120), y: Math.min(Math.max(g.y, 0), innerHeight - 40) }
 }
 
-function initialGeo(): Geo {
+function savedGeo(): Geo | undefined {
   try {
     const saved = JSON.parse(localStorage.getItem(GEO_KEY) ?? 'null')
     if (saved && [saved.x, saved.y, saved.w, saved.h].every(Number.isFinite)) return fit(saved)
   } catch {
     localStorage.removeItem(GEO_KEY)
   }
-  return fit({ x: 60, y: 90, w: innerWidth - 560, h: innerHeight - 140 })
 }
+
+const graphArea = () => document.querySelector('.tab-page:not([hidden]) .graph')
+
+function dockedGeo(): Geo | undefined {
+  const r = graphArea()?.getBoundingClientRect()
+  return r && r.width > 0 && r.height > 0 ? fit({ x: r.left, y: r.top, w: r.width, h: r.height }) : undefined
+}
+
+const initialGeo = (): Geo => savedGeo() ?? dockedGeo() ?? fit({ x: 60, y: 90, w: innerWidth - 560, h: innerHeight - 140 })
 
 function describe(sel: FileSel): string {
   return sel.area.kind === 'unstaged' ? 'Working Tree' : sel.area.kind === 'staged' ? 'Index' : short(sel.area.oid)
@@ -101,6 +110,20 @@ function DiffPane(p: {
         <div class="placeholder">Loading…</div>
       ) : versions.binary ? (
         <div class="placeholder">Binary or very large file</div>
+      ) : p.tab.file ? (
+        <FileEditor
+          text={versions.new}
+          filename={sel.path}
+          look={p.look}
+          wrap={p.options.wrap}
+          editable={!mixed}
+          onDirty={p.onDirty}
+          onSave={save}
+          handle={(h) => {
+            ref.current = h
+            p.handle({ ...h, save })
+          }}
+        />
       ) : (
         <DiffEditor
           oldText={versions.old}
@@ -145,12 +168,13 @@ export function DiffWindow(p: {
   const [max, setMax] = useState(false)
   const handles = useRef(new Map<string, PaneHandle>())
   const dragged = useRef(false)
+  const moved = useRef(savedGeo() !== undefined)
   const strip = useRef<HTMLDivElement>(null)
   const current = p.tabs.find((t) => t.key === p.active) ?? p.tabs[0]
   const h = () => handles.current.get(current.key)
 
   useEffect(() => {
-    localStorage.setItem(GEO_KEY, JSON.stringify(geo))
+    if (moved.current) localStorage.setItem(GEO_KEY, JSON.stringify(geo))
   }, [geo])
   useEffect(() => {
     strip.current?.querySelector('.tab.active')?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
@@ -159,6 +183,17 @@ export function DiffWindow(p: {
     const onResize = () => setGeo((g) => fit(g))
     addEventListener('resize', onResize)
     return () => removeEventListener('resize', onResize)
+  }, [])
+  useEffect(() => {
+    const area = graphArea()
+    if (!area) return
+    const follow = () => {
+      const g = !moved.current && dockedGeo()
+      if (g) setGeo(g)
+    }
+    const ro = new ResizeObserver(follow)
+    ro.observe(area)
+    return () => ro.disconnect()
   }, [])
 
   const track = (e: PointerEvent, apply: (dx: number, dy: number, start: Geo) => Geo) => {
@@ -179,6 +214,7 @@ export function DiffWindow(p: {
       removeEventListener('pointermove', move)
       removeEventListener('pointerup', up)
       document.body.classList.remove('dragging')
+      if (dragged.current) moved.current = true
       setGeo((g) => fit(g))
     }
     addEventListener('pointermove', move)
@@ -222,7 +258,7 @@ export function DiffWindow(p: {
               <div
                 key={t.key}
                 class={`tab ${t.key === current.key ? 'active' : ''} ${t.dirty ? 'dirty' : ''}`}
-                title={`${t.sel.path} (${describe(t.sel)})`}
+                title={t.file ? t.sel.path : `${t.sel.path} (${describe(t.sel)})`}
                 role="tab"
                 tabIndex={0}
                 aria-selected={t.key === current.key}
@@ -238,9 +274,9 @@ export function DiffWindow(p: {
                   p.onCloseTab(t.key)
                 }}
               >
-                <Icon name="diff" />
+                <Icon name={t.file ? 'file' : 'diff'} />
                 <span class="name">{name}</span>
-                <span class="desc">({describe(t.sel)})</span>
+                {!t.file && <span class="desc">({describe(t.sel)})</span>}
                 <button
                   class="icon close"
                   title={t.dirty ? 'Unsaved edits. Close' : 'Close'}
@@ -271,18 +307,22 @@ export function DiffWindow(p: {
               <Icon name="go-to-file" />
             </button>
           )}
-          <button class="icon" title="Previous Change" onClick={() => h()?.prev()}>
-            <Icon name="arrow-up" />
-          </button>
-          <button class="icon" title="Next Change" onClick={() => h()?.next()}>
-            <Icon name="arrow-down" />
-          </button>
-          <button class={`icon ${p.options.collapse ? 'on' : ''}`} title="Collapse Unchanged Regions" onClick={() => toggle('collapse')}>
-            <Icon name="fold" />
-          </button>
-          <button class={`icon ${p.options.mode === 'inline' ? 'on' : ''}`} title="Toggle Inline View" onClick={() => p.onOptions({ ...p.options, mode: p.options.mode === 'split' ? 'inline' : 'split' })}>
-            <Icon name="diff-single" />
-          </button>
+          {!current.file && (
+            <>
+              <button class="icon" title="Previous Change" onClick={() => h()?.prev()}>
+                <Icon name="arrow-up" />
+              </button>
+              <button class="icon" title="Next Change" onClick={() => h()?.next()}>
+                <Icon name="arrow-down" />
+              </button>
+              <button class={`icon ${p.options.collapse ? 'on' : ''}`} title="Collapse Unchanged Regions" onClick={() => toggle('collapse')}>
+                <Icon name="fold" />
+              </button>
+              <button class={`icon ${p.options.mode === 'inline' ? 'on' : ''}`} title="Toggle Inline View" onClick={() => p.onOptions({ ...p.options, mode: p.options.mode === 'split' ? 'inline' : 'split' })}>
+                <Icon name="diff-single" />
+              </button>
+            </>
+          )}
           <button class={`icon ${p.options.wrap ? 'on' : ''}`} title="Toggle Word Wrap" onClick={() => toggle('wrap')}>
             <Icon name="word-wrap" />
           </button>

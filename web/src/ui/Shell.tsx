@@ -7,7 +7,7 @@ import { helperShell, httpBackend, type RepoInfo } from '../git/remote'
 import { localBackend } from '../git/repo'
 import { isScheme, schemeVars, type Scheme } from '../git/scheme'
 import { App, loadSettings, type TabApi, type Theme } from './App'
-import { Icon } from './bits'
+import { BrandLinks, BrandMark, Icon } from './bits'
 import { Dialogs, type Dialog } from './Dialogs'
 import { Palette, type Command } from './Palette'
 import { Sidebar, type SideRecent } from './Sidebar'
@@ -363,17 +363,29 @@ export function Shell() {
               onApi={(api) => apis.current.set(t.id, api)}
               onSearchRepos={searchRepos}
               onAll={runAll}
+              sidebar={docked}
+              onToggleSidebar={() => {
+                setDocked(!docked)
+                setShown(false)
+              }}
             />
           </div>
         ))}
         {tabs.length === 0 && (
           <div class="app">
             <div class="toolbar">
-              <span class="repo">Ramulus</span>
+              <div class="tb-side">
+                <BrandMark />
+                <span class="repo">Ramulus</span>
+              </div>
+              <div />
+              <div class="tb-side tb-end">
+                <BrandLinks />
+              </div>
             </div>
             <div class="welcome">
               <h1>
-                <span class="brand-mark" aria-hidden="true" />
+                <BrandMark />
                 Ramulus
               </h1>
               <p>Every branch of your repository, in one graph.{helper ? '' : ' Runs entirely in this browser tab.'}</p>

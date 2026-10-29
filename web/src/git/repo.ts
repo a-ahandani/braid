@@ -492,6 +492,7 @@ export function localBackend(ctx: Ctx, settings: () => NetSettings): Backend {
     native: false,
     load: (limit) => load(ctx, limit),
     status: () => status(ctx),
+    files: () => git.listFiles({ fs: ctx.fs, dir: ctx.dir, cache: ctx.cache }),
     commitFiles: (oid) => commitFiles(ctx, oid),
     fileVersions: (area, path) => fileVersions(ctx, area, path),
     writeIndex: (path, content, expected) => writeIndex(ctx, path, content, expected),

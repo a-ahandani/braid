@@ -132,4 +132,50 @@ describe('AI through the helper', () => {
     assert.match(seen, /event: exit/)
     stop.abort()
   })
+
+  it('keeps each terminal tab separate and stops them one at a time', { timeout: 20000 }, async () => {
+    const stream = async (id) => {
+      const res = await fetch(`${base}/api/term?token=${'t'.repeat(32)}&repo=${encodeURIComponent(repo)}&id=${id}`)
+      const reader = res.body.getReader()
+      const decoder = new TextDecoder()
+      const s = { seen: '', reader }
+      s.until = async (text) => {
+        while (!s.seen.includes(text)) {
+          const { value, done } = await reader.read()
+          if (done) break
+          s.seen += decoder.decode(value)
+        }
+      }
+      return s
+    }
+    assert.equal((await call('termStart', { id: 'one', agent: 'claude', cols: 80, rows: 24 })).result.fresh, true)
+    assert.equal((await call('termStart', { id: 'two', agent: 'claude', cols: 80, rows: 24 })).result.fresh, true)
+    assert.deepEqual((await call('termList')).result, [
+      { id: 'one', kind: 'agent', agent: 'claude' },
+      { id: 'two', kind: 'agent', agent: 'claude' },
+    ])
+    const one = await stream('one')
+    const two = await stream('two')
+    await call('termInput', { id: 'two', data: 'only in two\r' })
+    await two.until('only in two')
+    await call('termInput', { id: 'one', data: 'only in one\r' })
+    await one.until('only in one')
+    assert.doesNotMatch(one.seen, /only in two/)
+    await call('termStop', { id: 'one' })
+    await one.until('event: exit')
+    await call('termInput', { id: 'two', data: 'still here\r' })
+    await two.until('still here')
+    assert.match((await call('termStart', { id: 'Bad Id', agent: 'claude' })).error, /Invalid terminal id/)
+    await call('termStop', { all: true })
+    await two.until('event: exit')
+    one.reader.cancel()
+    two.reader.cancel()
+  })
+
+  it('opens a plain shell tab without the AI setting', { timeout: 20000, skip: process.platform === 'win32' }, async () => {
+    await call('setAi', { settings: { enabled: false, prompts: {} } })
+    assert.match((await call('termStart', { id: 'agent', agent: 'claude' })).error, /turned off/)
+    assert.equal((await call('termStart', { id: 'sh', kind: 'shell', cols: 80, rows: 24 })).result.agent, undefined)
+    await call('termStop', { id: 'sh' })
+  })
 })

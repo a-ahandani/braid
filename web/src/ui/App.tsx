@@ -1,17 +1,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'preact/hooks'
 import { DEFAULT_PROMPTS, branchName, fillPrompt, splitMessage } from '../git/ai'
-import type { AiInfo, AiSettings, Backend, PullMode, PushResult, RebaseResult, RemoteSwitch } from '../git/backend'
+import type { AiInfo, AiSettings, Backend, PullMode, PushResult, RebaseResult, RemoteSwitch, TermKind } from '../git/backend'
 import { layout, type RowLayout } from '../git/graph'
 import { PAGE, type Commit, type DiffArea, type FileChange, type NetSettings, type RepoData } from '../git/repo'
 import type { Scheme } from '../git/scheme'
 import { AgentTerminal, AiConsent, AiSettingsDialog } from './Ai'
-import { Icon, laneColor, short } from './bits'
+import { BrandLinks, BrandMark, Icon, laneColor, short } from './bits'
 import { DetailPanel, type FileSel } from './DetailPanel'
 import { DiffWindow, tabKey, type DiffOptions, type DiffTab } from './DiffWindow'
 import type { ChunkAction } from './DiffEditor'
 import { Dialogs, type Dialog } from './Dialogs'
 import { GraphView, type DropInfo, type PillData } from './GraphView'
-import { LeftPanel } from './LeftPanel'
+import { LeftPanel, type LeftMode } from './LeftPanel'
 import { Menu, type MenuItem, type MenuState } from './Menu'
 import { Palette, type Command } from './Palette'
 import { Shortcuts } from './Shortcuts'
@@ -31,6 +31,7 @@ type Sel = { kind: 'wip' } | { kind: 'commit'; oid: string }
 
 const WIP = '0000000000000000000000000000000000000000'
 const SETTINGS_KEY = 'ramulus.net'
+const PAGE_TAG = Date.now().toString(36)
 const stored = (key: string) => (typeof localStorage === 'undefined' ? null : localStorage.getItem(key))
 
 function buildView(be: Backend, data: RepoData, limit: number): View {
@@ -79,7 +80,7 @@ export interface TabApi {
   fetch: () => Promise<void>
 }
 
-export function App(p: { be: Backend; active: boolean; theme: Theme; onTheme: (t: Theme) => void; scheme?: Scheme; onScheme: (s?: Scheme) => void; onOpenRepo: () => void; onDirty: (dirty: boolean) => void; onApi: (api: TabApi) => void; onSearchRepos: () => void; onAll: (kind: 'pull' | 'fetch') => void }) {
+export function App(p: { be: Backend; active: boolean; theme: Theme; onTheme: (t: Theme) => void; scheme?: Scheme; onScheme: (s?: Scheme) => void; onOpenRepo: () => void; onDirty: (dirty: boolean) => void; onApi: (api: TabApi) => void; onSearchRepos: () => void; onAll: (kind: 'pull' | 'fetch') => void; sidebar: boolean; onToggleSidebar: () => void }) {
   const theme = p.theme
   const look = p.scheme ? `scheme:${p.scheme.id}` : theme
   const setTheme = (t: Theme) => {
@@ -103,7 +104,7 @@ export function App(p: { be: Backend; active: boolean; theme: Theme; onTheme: (t
   const [diffTabs, setDiffTabs] = useState<DiffTab[]>([])
   const [activeDiff, setActiveDiff] = useState<string>()
   const [commitFiles, setCommitFiles] = useState<FileChange[]>([])
-  const [diffOptions, setDiffOptionsState] = useState<DiffOptions>(() => ({ wrap: stored('ramulus.wrap') === '1', mode: stored('ramulus.diff') === 'inline' ? 'inline' : 'split', collapse: stored('ramulus.collapse') === '1' }))
+  const [diffOptions, setDiffOptionsState] = useState<DiffOptions>(() => ({ wrap: stored('ramulus.wrap') === '1', mode: stored('ramulus.diff') === 'inline' ? 'inline' : 'split', collapse: stored('ramulus.collapse') !== '0' }))
   const setDiffOptions = (o: DiffOptions) => {
     setDiffOptionsState(o)
     localStorage.setItem('ramulus.wrap', o.wrap ? '1' : '0')
@@ -124,8 +125,8 @@ export function App(p: { be: Backend; active: boolean; theme: Theme; onTheme: (t
   const [toast, setToast] = useState<string>()
   const [undo, setUndo] = useState<{ before: string; onto: string }>()
   const [showLeft, setShowLeft] = useState(true)
-  const [showRight, setShowRight] = useState(true)
-  const [widths, setWidths] = useState(() => ({ left: Number(stored('ramulus.left')) || 240, right: Number(stored('ramulus.right')) || 440 }))
+  const [leftMode, setLeftMode] = useState<LeftMode>('branches')
+  const [leftW, setLeftW] = useState(() => Number(stored('ramulus.leftw')) || 380)
   const [scrollTo, setScrollTo] = useState<number>()
   const [updatedAt, setUpdatedAt] = useState<Date>()
   const [settings, setSettings] = useState<NetSettings>(loadSettings)
@@ -134,12 +135,15 @@ export function App(p: { be: Backend; active: boolean; theme: Theme; onTheme: (t
   const [aiDialog, setAiDialog] = useState<'consent' | 'settings'>()
   const [drafting, setDrafting] = useState<'commit' | 'branch'>()
   const draftStop = useRef<AbortController | undefined>(undefined)
-  const [drawer, setDrawer] = useState<{ agent: string }>()
+  const [terms, setTerms] = useState<{ id: string; kind: TermKind; agent?: string }[]>([])
+  const [termActive, setTermActive] = useState<string>()
+  const [termRunning, setTermRunning] = useState<Record<string, boolean>>({})
+  const termSeq = useRef(0)
   const [drawerShown, setDrawerShown] = useState(false)
+  const [drawerMax, setDrawerMax] = useState(false)
   const [drawerH, setDrawerH] = useState(() => Number(stored('ramulus.drawer')) || 280)
-  const [paste, setPaste] = useState<{ id: number; text: string }>()
-  const [restart, setRestart] = useState(0)
-  const [termState, setTermState] = useState<{ running: boolean; agent?: string }>({ running: false })
+  const [paste, setPaste] = useState<{ id: number; text: string; tab: string }>()
+  const [restart, setRestart] = useState({ tab: '', n: 0 })
   const consent = useRef<((agent?: string) => void) | undefined>(undefined)
   const overlayRef = useRef(false)
   const filterRef = useRef<HTMLInputElement>(null)
@@ -156,9 +160,8 @@ export function App(p: { be: Backend; active: boolean; theme: Theme; onTheme: (t
     localStorage.setItem('ramulus.drawer', String(drawerH))
   }, [drawerH])
   useEffect(() => {
-    localStorage.setItem('ramulus.left', String(widths.left))
-    localStorage.setItem('ramulus.right', String(widths.right))
-  }, [widths])
+    localStorage.setItem('ramulus.leftw', String(leftW))
+  }, [leftW])
   useEffect(() => {
     if (!toast) return
     const t = setTimeout(() => setToast(undefined), 4000)
@@ -291,7 +294,7 @@ export function App(p: { be: Backend; active: boolean; theme: Theme; onTheme: (t
   useEffect(() => {
     if (!view) return
     const gone = (t: DiffTab) => {
-      if (t.dirty || t.sel.area.kind === 'commit') return false
+      if (t.dirty || t.file || t.sel.area.kind === 'commit') return false
       const list = t.sel.area.kind === 'staged' ? view.data.status.staged : view.data.status.unstaged
       return !list.some((f) => f.path === t.sel.path)
     }
@@ -429,21 +432,80 @@ export function App(p: { be: Backend; active: boolean; theme: Theme; onTheme: (t
     }
   }
 
+  const activeTerm = terms.find((t) => t.id === termActive) ?? terms[terms.length - 1]
+  const termLabel = (t: { id: string; kind: TermKind; agent?: string }) => {
+    const name = t.kind === 'shell' ? 'Terminal' : agentName(t.agent)
+    const same = terms.filter((x) => x.kind === t.kind && x.agent === t.agent)
+    return same.length > 1 ? `${name} ${same.findIndex((x) => x.id === t.id) + 1}` : name
+  }
+
+  const addTerm = (kind: TermKind, agent?: string) => {
+    const t = { id: `${PAGE_TAG}-${++termSeq.current}`, kind, agent }
+    setTerms((ts) => [...ts, t])
+    setTermActive(t.id)
+    setDrawerShown(true)
+    return t
+  }
+
   const openAgent = async (conflictFile?: string) => {
     const picked = await pickAgent().catch((e) => void say(e))
     if (!picked) return
-    setDrawer((d) => d ?? { agent: picked.agent })
+    const t = (activeTerm?.kind === 'agent' ? activeTerm : terms.findLast((x) => x.kind === 'agent')) ?? addTerm('agent', picked.agent)
+    setTermActive(t.id)
     setDrawerShown(true)
-    if (conflictFile) setPaste({ id: Date.now(), text: fillPrompt(picked.settings.prompts.conflict || DEFAULT_PROMPTS.conflict, conflictFile) })
+    if (conflictFile) setPaste({ id: Date.now(), tab: t.id, text: fillPrompt(picked.settings.prompts.conflict || DEFAULT_PROMPTS.conflict, conflictFile) })
   }
 
-  const stopAgent = () => {
+  const toggleAgent = async () => {
+    if (drawerShown) return setDrawerShown(false)
+    if (terms.length) return setDrawerShown(true)
+    if (!p.be.termStart || !p.be.ai) return setToast('Run npx ramulus in a repository to use your AI agent here')
+    const info = await p.be.ai().catch(() => undefined)
+    if (info && (info.settings.enabled === false || info.agents.length === 0)) return openAiSettings()
+    openAgent()
+  }
+
+  const closeTerm = (id: string) => {
+    p.be.termStop?.(id).catch(() => {})
+    const rest = terms.filter((t) => t.id !== id)
+    setTerms(rest)
+    if (activeTerm?.id === id) setTermActive(rest[rest.length - 1]?.id)
+    if (paste?.tab === id) setPaste(undefined)
+    if (rest.length === 0) {
+      setDrawerShown(false)
+      setDrawerMax(false)
+    }
+  }
+
+  const closeAllTerms = () => {
     p.be.termStop?.().catch(() => {})
     setPaste(undefined)
-    setDrawer(undefined)
+    setTerms([])
+    setTermActive(undefined)
     setDrawerShown(false)
+    setDrawerMax(false)
   }
-  useEffect(() => () => void p.be.termStop?.().catch(() => {}), [])
+
+  const newTermMenu = (e: MouseEvent) => {
+    const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
+    const agents = aiReady ? (aiInfo?.agents ?? []) : []
+    setMenu({
+      x: r.left,
+      y: r.bottom + 4,
+      items: [
+        ...agents.map((a) => ({ label: a.name, onClick: () => void addTerm('agent', a.id) })),
+        ...(agents.length ? [] : [{ label: 'Set up an AI agent…', onClick: openAiSettings }]),
+        { label: 'Terminal', onClick: () => void addTerm('shell') },
+      ],
+    })
+  }
+  useEffect(() => {
+    p.be.termList?.().then((list) => {
+      if (!list.length) return
+      setTerms((ts) => [...list, ...ts])
+    }, () => {})
+    return () => void p.be.termStop?.().catch(() => {})
+  }, [])
 
   const closeDialog = () => {
     if (drafting === 'branch') draftStop.current?.abort()
@@ -459,9 +521,11 @@ export function App(p: { be: Backend; active: boolean; theme: Theme; onTheme: (t
   const aiCommands = (): Command[] => {
     if (!p.be.ai) return []
     const list: Command[] = [{ id: 'ai-settings', group: 'AI', label: 'AI agent settings', run: openAiSettings }]
-    if (!aiReady || !p.be.termStart) return list
-    list.push({ id: 'ai-term', group: 'AI', label: drawerShown ? 'Hide the agent terminal' : 'Show the agent terminal', hint: '⌃`', run: () => (drawerShown ? setDrawerShown(false) : openAgent()) })
-    if (drawer) list.push({ id: 'ai-stop', group: 'AI', label: 'Stop the agent', run: stopAgent })
+    if (!p.be.termStart) return list
+    list.push({ id: 'ai-term', group: 'AI', label: drawerShown ? 'Hide the agent panel' : 'Show the agent panel', hint: '⌃`', run: toggleAgent })
+    list.push({ id: 'term-new', group: 'AI', label: 'New terminal tab', run: () => void addTerm('shell') })
+    if (terms.length) list.push({ id: 'ai-stop', group: 'AI', label: 'Close every agent and terminal tab', run: closeAllTerms })
+    if (!aiReady) return list
     if (view?.data.status.staged.length) list.push({ id: 'ai-commit', group: 'AI', label: 'Draft a commit message with your AI agent', run: () => aiDraft('commit') })
     for (const f of view?.data.status.unstaged.filter((x) => x.conflict) ?? []) list.push({ id: `ai-fix:${f.path}`, group: 'AI', label: `Fix the conflict in ${f.path} with your AI agent`, run: () => openAgent(f.path) })
     return list
@@ -697,6 +761,11 @@ export function App(p: { be: Backend; active: boolean; theme: Theme; onTheme: (t
     setDiffTabs((ts) => (ts.some((t) => t.key === key) ? ts : [...ts, { key, sel: f, dirty: false }]))
     setActiveDiff(key)
   }
+  const openWorkFile = (path: string) => {
+    const key = `file:${path}`
+    setDiffTabs((ts) => (ts.some((t) => t.key === key) ? ts : [...ts, { key, sel: { area: { kind: 'unstaged' }, path }, dirty: false, file: true }]))
+    setActiveDiff(key)
+  }
   const dropTab = (key: string) => {
     const i = diffTabs.findIndex((t) => t.key === key)
     const rest = diffTabs.filter((t) => t.key !== key)
@@ -777,7 +846,6 @@ export function App(p: { be: Backend; active: boolean; theme: Theme; onTheme: (t
       { id: 'unstageall', group: 'Action', label: 'Unstage everything', hint: '⌘⇧U', run: () => run('Unstaging', () => v.be.unstage(v.data.status.staged.map((f) => f.path)), { statusOnly: true }) },
       { id: 'refresh', group: 'View', label: 'Refresh', run: () => reload() },
       { id: 'left', group: 'View', label: 'Toggle the left panel', hint: '⌘J', run: () => setShowLeft((s) => !s) },
-      { id: 'right', group: 'View', label: 'Toggle the detail panel', hint: '⌘K', run: () => setShowRight((s) => !s) },
       { id: 'theme', group: 'View', label: theme === 'dark' ? 'Switch to the light theme' : 'Switch to the dark theme', run: () => setTheme(theme === 'dark' ? 'light' : 'dark') },
       { id: 'scheme', group: 'View', label: 'Use a color scheme from a link…', run: () => setDialog({ kind: 'scheme' }) },
       { id: 'tree', group: 'View', label: tree ? 'Show files as a flat list' : 'Show files as a tree', run: () => setTree(!tree) },
@@ -797,15 +865,14 @@ export function App(p: { be: Backend; active: boolean; theme: Theme; onTheme: (t
     for (const b of v.data.remote) list.push({ id: `swr:${b.name}`, group: 'Remote', label: `Switch to ${b.name}`, run: () => switchRemote(b.name) })
     for (const t of v.data.tags) list.push({ id: `tag:${t.name}`, group: 'Tag', label: `Jump to ${t.name}`, run: () => jump(t.oid) })
     return list
-  }, [view, head, pullMode, theme, tree, solo, aiInfo, aiReady, drawer, drawerShown])
+  }, [view, head, pullMode, theme, tree, solo, aiInfo, aiReady, terms, drawerShown])
 
   useEffect(() => {
     if (!p.active) return
     const onKey = (e: KeyboardEvent) => {
-      if (e.ctrlKey && e.key === '`' && aiReady && p.be.termStart) {
+      if (e.ctrlKey && e.key === '`' && p.be.termStart) {
         e.preventDefault()
-        if (drawer && drawerShown) setDrawerShown(false)
-        else openAgent()
+        toggleAgent()
         return
       }
       if (e.target instanceof Element && e.target.closest('.diff-window, .agent-drawer')) return
@@ -835,9 +902,6 @@ export function App(p: { be: Backend; active: boolean; theme: Theme; onTheme: (t
       } else if (mod && e.key === 'j') {
         e.preventDefault()
         setShowLeft((s) => !s)
-      } else if (mod && e.key === 'k') {
-        e.preventDefault()
-        setShowRight((s) => !s)
       } else if (e.key === 'Escape') {
         if (palette) openPalette(false)
         else if (shortcuts) setShortcuts(false)
@@ -901,12 +965,6 @@ export function App(p: { be: Backend; active: boolean; theme: Theme; onTheme: (t
           </>
         )}
         <span class="spacer" />
-        {aiReady && p.be.termStart && (
-          <button class={drawerShown ? 'on' : ''} onClick={() => (drawerShown ? setDrawerShown(false) : openAgent())} title="Agent terminal (⌃`)">
-            <Icon name="terminal" />
-            Agent
-          </button>
-        )}
         {updatedAt && <span title="Last read of the repository">Updated {updatedAt.toLocaleTimeString()}</span>}
         {v && (
           <button onClick={() => openPalette(true)} title="Command palette (⌘⇧P)">
@@ -945,9 +1003,10 @@ export function App(p: { be: Backend; active: boolean; theme: Theme; onTheme: (t
   const net = (label: string, fn: () => Promise<unknown>) => run(label, fn, { after: () => setToast(`${label} done`) })
 
   return (
-    <div class={`app ${drawer && drawerShown ? 'with-drawer' : ''}`}>
+    <div class={`app ${terms.length && drawerShown ? 'with-drawer' : ''} ${terms.length && drawerShown && drawerMax ? 'drawer-max' : ''}`}>
       <div class="toolbar">
         <div class="tb-side">
+          <BrandMark />
           <span class="repo">{v.data.name}</span>
           <button
             class={`branch ${v.data.headBranch ? '' : 'detached'}`}
@@ -998,6 +1057,11 @@ export function App(p: { be: Backend; active: boolean; theme: Theme; onTheme: (t
           <button class="tool" disabled={!!busy || v.data.stashes.length === 0} onClick={() => run('Applying stash', () => v.be.stashApply(0, true))} title="Apply and drop the newest stash" aria-label="Pop stash">
             <Icon name="git-stash-pop" />
           </button>
+          <span class="sep" />
+          <button class={`ai-btn ${drawerShown ? 'on' : ''}`} onClick={toggleAgent} title="Your AI agent and terminals (⌃`)" aria-pressed={drawerShown}>
+            <Icon name="sparkle" />
+            Agent
+          </button>
         </div>
         <div class="tb-side tb-end">
           <span class="search">
@@ -1005,11 +1069,11 @@ export function App(p: { be: Backend; active: boolean; theme: Theme; onTheme: (t
             <input ref={filterRef} placeholder="Search commits (⌘F)" value={filter} onInput={(e) => setFilter((e.target as HTMLInputElement).value)} />
           </span>
           {filter && <span class="busy">{order.length} results</span>}
+          <button class={`icon ${p.sidebar ? 'on' : ''}`} onClick={p.onToggleSidebar} title={p.sidebar ? 'Hide the repositories sidebar' : 'Show the repositories sidebar'} aria-pressed={p.sidebar}>
+            <Icon name="repo" />
+          </button>
           <button class={`icon ${showLeft ? 'on' : ''}`} onClick={() => setShowLeft(!showLeft)} title="Toggle left panel (⌘J)">
             <Icon name={showLeft ? 'layout-sidebar-left' : 'layout-sidebar-left-off'} />
-          </button>
-          <button class={`icon ${showRight ? 'on' : ''}`} onClick={() => setShowRight(!showRight)} title="Toggle detail panel (⌘K)">
-            <Icon name={showRight ? 'layout-sidebar-right' : 'layout-sidebar-right-off'} />
           </button>
           {!v.be.native && (
             <button class="icon" onClick={() => setDialog({ kind: 'settings' })} title="Settings: author and remote access">
@@ -1019,9 +1083,10 @@ export function App(p: { be: Backend; active: boolean; theme: Theme; onTheme: (t
           <button class="icon" onClick={() => reload()} title="Refresh">
             <Icon name="refresh" />
           </button>
+          <BrandLinks />
         </div>
       </div>
-      <div class={`body ${showLeft ? '' : 'no-left'} ${showRight ? '' : 'no-right'}`} style={{ '--left-w': `${widths.left}px`, '--right-w': `${widths.right}px` }}>
+      <div class={`body ${showLeft ? '' : 'no-left'}`} style={{ '--left-w': `${leftW}px` }}>
         <LeftPanel
           data={v.data}
           columnOf={(oid) => {
@@ -1038,8 +1103,48 @@ export function App(p: { be: Backend; active: boolean; theme: Theme; onTheme: (t
           onRemoteMenu={(e, name) => setMenu({ x: e.clientX, y: e.clientY, items: remoteItems(name) })}
           onTagMenu={(e, name, oid) => setMenu({ x: e.clientX, y: e.clientY, items: tagItems(name, oid) })}
           onStashMenu={(e, index, message) => setMenu({ x: e.clientX, y: e.clientY, items: stashItems(index, message) })}
+          loadFiles={() => v.be.files()}
+          stamp={v}
+          selectedFile={activeTab?.file ? activeTab.sel.path : undefined}
+          onOpenFile={openWorkFile}
+          mode={leftMode}
+          onMode={setLeftMode}
+          detail={
+            <DetailPanel
+              data={v.data}
+              commit={current}
+              commitColor={currentColor}
+              commitFiles={commitFiles}
+              isStash={!!current && v.data.stashes.some((s) => s.oid === current.id)}
+              selectedFile={fileSel}
+              tree={tree}
+              summary={summary}
+              description={description}
+              amend={amend}
+              onTree={setTree}
+              onSummary={setSummary}
+              onDescription={setDescription}
+              onAmend={setAmend}
+              onSelectFile={openFile}
+              onStage={(files) => run('Staging', () => v.be.stage(files), { statusOnly: true })}
+              onUnstage={(paths) => run('Unstaging', () => v.be.unstage(paths), { statusOnly: true })}
+              onDiscard={discardFiles}
+              onStageAll={() => run('Staging', () => v.be.stage(v.data.status.unstaged), { statusOnly: true })}
+              onUnstageAll={() => run('Unstaging', () => v.be.unstage(v.data.status.staged.map((f) => f.path)), { statusOnly: true })}
+              onCommit={doCommit}
+              onCopy={copy}
+              onJump={jump}
+              onFileMenu={fileMenu}
+              onAbort={v.be.abort ? () => run('Aborting', () => v.be.abort!(), { after: () => setUndo(undefined) }) : undefined}
+              onDropAutostash={v.be.dropAutostash ? () => run('Dropping the saved copy', () => v.be.dropAutostash!()) : undefined}
+              onContinue={v.be.continueOp ? () => run('Continuing', () => v.be.continueOp!()) : undefined}
+              onAiCommit={aiReady ? () => aiDraft('commit') : undefined}
+              aiDrafting={drafting === 'commit'}
+              onAiFix={aiReady && p.be.termStart ? (path) => openAgent(path) : undefined}
+            />
+          }
         />
-        <Splitter onDrag={(dx) => setWidths((w) => ({ ...w, left: clamp(w.left + dx, 160, 520) }))} />
+        <Splitter onDrag={(dx) => setLeftW((w) => clamp(w + dx, 240, 760))} />
         <GraphView
           rows={v.rows}
           layoutOf={layoutOf}
@@ -1053,7 +1158,10 @@ export function App(p: { be: Backend; active: boolean; theme: Theme; onTheme: (t
           wipCount={wipCount}
           hasMore={v.data.hasMore && !soloInfo}
           soloCount={solo.size}
-          onSelect={select}
+          onSelect={(i) => {
+            select(i)
+            setLeftMode('commit')
+          }}
           onContextMenu={rowMenu}
           onPillDoubleClick={pillDoubleClick}
           onDrop={onDrop}
@@ -1061,65 +1169,71 @@ export function App(p: { be: Backend; active: boolean; theme: Theme; onTheme: (t
           onScrolled={() => setScrollTo(undefined)}
           onClearSolo={() => setSolo(new Set())}
         />
-        <Splitter onDrag={(dx) => setWidths((w) => ({ ...w, right: clamp(w.right - dx, 300, 900) }))} />
-        <DetailPanel
-          data={v.data}
-          commit={current}
-          commitColor={currentColor}
-          commitFiles={commitFiles}
-          isStash={!!current && v.data.stashes.some((s) => s.oid === current.id)}
-          selectedFile={fileSel}
-          tree={tree}
-          summary={summary}
-          description={description}
-          amend={amend}
-          onTree={setTree}
-          onSummary={setSummary}
-          onDescription={setDescription}
-          onAmend={setAmend}
-          onSelectFile={openFile}
-          onStage={(files) => run('Staging', () => v.be.stage(files), { statusOnly: true })}
-          onUnstage={(paths) => run('Unstaging', () => v.be.unstage(paths), { statusOnly: true })}
-          onDiscard={discardFiles}
-          onStageAll={() => run('Staging', () => v.be.stage(v.data.status.unstaged), { statusOnly: true })}
-          onUnstageAll={() => run('Unstaging', () => v.be.unstage(v.data.status.staged.map((f) => f.path)), { statusOnly: true })}
-          onCommit={doCommit}
-          onCopy={copy}
-          onJump={jump}
-          onFileMenu={fileMenu}
-          onAbort={v.be.abort ? () => run('Aborting', () => v.be.abort!(), { after: () => setUndo(undefined) }) : undefined}
-          onDropAutostash={v.be.dropAutostash ? () => run('Dropping the saved copy', () => v.be.dropAutostash!()) : undefined}
-          onContinue={v.be.continueOp ? () => run('Continuing', () => v.be.continueOp!()) : undefined}
-          onAiCommit={aiReady ? () => aiDraft('commit') : undefined}
-          aiDrafting={drafting === 'commit'}
-          onAiFix={aiReady && p.be.termStart ? (path) => openAgent(path) : undefined}
-        />
       </div>
-      {drawer && drawerShown && p.active && (
-        <div class="agent-drawer" style={{ height: `${drawerH}px` }}>
-          <Splitter horizontal onDrag={(dy) => setDrawerH((h) => clamp(h - dy, 120, innerHeight - 200))} />
+      {activeTerm && drawerShown && p.active && (
+        <div class="agent-drawer" style={drawerMax ? undefined : { height: `${drawerH}px` }}>
+          {!drawerMax && <Splitter horizontal onDrag={(dy) => setDrawerH((h) => clamp(h - dy, 120, innerHeight - 200))} />}
           <div class="drawer-head">
-            <Icon name="terminal" />
-            <span class="title">Agent</span>
-            <span class="agent">
-              {agentName(termState.agent ?? drawer.agent)}
-              {termState.running ? '' : ' (stopped)'}
-            </span>
+            <div class="term-tabs" role="tablist" aria-label="Agent and terminal tabs">
+              {terms.map((t) => (
+                <div
+                  key={t.id}
+                  role="tab"
+                  tabIndex={0}
+                  aria-selected={t.id === activeTerm.id}
+                  class={`term-tab ${t.id === activeTerm.id ? 'active' : ''} ${termRunning[t.id] === false ? 'stopped' : ''}`}
+                  title={termRunning[t.id] === false ? `${termLabel(t)} (stopped)` : termLabel(t)}
+                  onClick={() => setTermActive(t.id)}
+                  onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && setTermActive(t.id)}
+                >
+                  <Icon name={t.kind === 'shell' ? 'terminal' : 'sparkle'} />
+                  <span class="label">{termLabel(t)}</span>
+                  <button
+                    class="icon"
+                    title="Close this tab"
+                    aria-label={`Close ${termLabel(t)}`}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      closeTerm(t.id)
+                    }}
+                  >
+                    <Icon name="close" />
+                  </button>
+                </div>
+              ))}
+              <button class="icon" title="New agent or terminal tab" aria-label="New agent or terminal tab" onClick={newTermMenu}>
+                <Icon name="add" />
+              </button>
+            </div>
             <span class="spacer" />
-            <button class="icon" title="Restart the agent" aria-label="Restart the agent" onClick={() => setRestart((n) => n + 1)}>
+            <button class="icon" title={`Restart this ${activeTerm.kind === 'shell' ? 'terminal' : 'agent'}`} aria-label="Restart this tab" onClick={() => setRestart((r) => ({ tab: activeTerm.id, n: r.n + 1 }))}>
               <Icon name="debug-restart" />
             </button>
             <button class="icon" title="AI agent settings" aria-label="AI agent settings" onClick={openAiSettings}>
               <Icon name="settings-gear" />
             </button>
+            <button class="icon" title={drawerMax ? 'Restore the panel' : 'Maximize the panel'} aria-label={drawerMax ? 'Restore the panel' : 'Maximize the panel'} onClick={() => setDrawerMax((m) => !m)}>
+              <Icon name={drawerMax ? 'screen-normal' : 'screen-full'} />
+            </button>
             <button class="icon" title="Hide the panel (⌃`)" aria-label="Hide the panel" onClick={() => setDrawerShown(false)}>
               <Icon name="chevron-down" />
             </button>
-            <button class="icon" title="Stop the agent and close the panel" aria-label="Stop the agent and close the panel" onClick={stopAgent}>
+            <button class="icon" title="Close every tab" aria-label="Close every tab" onClick={closeAllTerms}>
               <Icon name="trash" />
             </button>
           </div>
-          <AgentTerminal be={p.be} agent={drawer.agent} look={look} paste={paste} restart={restart} onState={setTermState} onPasted={() => setPaste(undefined)} />
+          <AgentTerminal
+            key={activeTerm.id}
+            be={p.be}
+            id={activeTerm.id}
+            kind={activeTerm.kind}
+            agent={activeTerm.agent}
+            look={look}
+            paste={paste?.tab === activeTerm.id ? paste : undefined}
+            restart={restart.tab === activeTerm.id ? restart.n : 0}
+            onState={(st) => setTermRunning((m) => ({ ...m, [activeTerm.id]: st.running }))}
+            onPasted={() => setPaste(undefined)}
+          />
         </div>
       )}
       {statusBar(v)}
@@ -1178,10 +1292,7 @@ export function App(p: { be: Backend; active: boolean; theme: Theme; onTheme: (t
           onSave={(settings) =>
             p.be
               .setAi!(settings)
-              .then(() => {
-                setAiInfo({ ...aiInfo, settings })
-                if (settings.agent) setDrawer((d) => d && { agent: settings.agent! })
-              })
+              .then(() => setAiInfo({ ...aiInfo, settings }))
               .catch((e) => fail('Could not save the AI settings', e))
           }
         />

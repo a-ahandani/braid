@@ -88,6 +88,14 @@ describe('git helper', () => {
     await git.discard(dir, [{ path: 'h.txt', kind: 'M' }])
   })
 
+  it('lists tracked files and leaves untracked ones to status', async () => {
+    writeFileSync(join(dir, 'scratch.tmp'), 'x\n')
+    const list = await git.files(dir)
+    assert.ok(list.includes('a.txt'))
+    assert.ok(!list.includes('scratch.tmp'))
+    rmSync(join(dir, 'scratch.tmp'))
+  })
+
   it('parses porcelain status including renames and conflicts', () => {
     const z = 'M  a.txt\0 M b.txt\0R  new.txt\0old.txt\0?? c.txt\0UU d.txt\0'
     assert.deepEqual(git.parseStatus(z), {

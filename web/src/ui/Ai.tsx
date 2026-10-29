@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'preact/hooks'
 import { DEFAULT_PROMPTS } from '../git/ai'
-import type { AiInfo, AiSettings, AiTask, Backend } from '../git/backend'
+import type { AiInfo, AiSettings, AiTask, Backend, TermKind } from '../git/backend'
 import { COLORS } from '../git/scheme'
 import { Buttons, Frame } from './Dialogs'
 
@@ -90,7 +90,9 @@ const ANSI = [...COLORS, ...COLORS.map((c) => `bright${c[0].toUpperCase()}${c.sl
 
 export function AgentTerminal(p: {
   be: Backend
-  agent: string
+  id: string
+  kind: TermKind
+  agent?: string
   look: string
   paste?: { id: number; text: string }
   restart: number
@@ -126,7 +128,7 @@ export function AgentTerminal(p: {
         while (pending) {
           const data = pending
           pending = ''
-          await latest.current.be.termInput!(data).catch(() => {})
+          await latest.current.be.termInput!(latest.current.id, data).catch(() => {})
         }
         sending = false
       }
@@ -139,17 +141,18 @@ export function AgentTerminal(p: {
       const start = async () => {
         detach()
         try {
-          const r = await latest.current.be.termStart!(latest.current.agent, xt.cols, xt.rows)
+          const r = await latest.current.be.termStart!(latest.current.id, latest.current.kind, latest.current.agent, xt.cols, xt.rows)
           latest.current.onState({ running: true, agent: r.agent })
           lastOutput = Date.now()
           detach = latest.current.be.termStream!(
+            latest.current.id,
             (d) => {
               lastOutput = Date.now()
               xt.write(d)
             },
             () => {
               latest.current.onState({ running: false })
-              xt.write('\r\n\x1b[2m[The agent exited. Press Restart to start it again.]\x1b[0m\r\n')
+              xt.write(`\r\n\x1b[2m[The ${latest.current.kind === 'shell' ? 'terminal' : 'agent'} exited. Press Restart to start it again.]\x1b[0m\r\n`)
             },
           )
           if (r.fresh) {
@@ -166,7 +169,7 @@ export function AgentTerminal(p: {
       const ro = new ResizeObserver(() => {
         const before = `${xt.cols}x${xt.rows}`
         fit.fit()
-        if (`${xt.cols}x${xt.rows}` !== before) latest.current.be.termResize!(xt.cols, xt.rows).catch(() => {})
+        if (`${xt.cols}x${xt.rows}` !== before) latest.current.be.termResize!(latest.current.id, xt.cols, xt.rows).catch(() => {})
       })
       ro.observe(el)
       term.current = {
@@ -177,7 +180,7 @@ export function AgentTerminal(p: {
           detach()
           detach = () => {}
           ready.current = latest.current
-            .be.termStop!()
+            .be.termStop!(latest.current.id)
             .catch(() => {})
             .then(() => (xt.reset(), start()))
             .catch(() => {})
