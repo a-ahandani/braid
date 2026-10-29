@@ -1,4 +1,4 @@
-# Ramulus for the browser
+# Braid for the browser
 
 The same client, running entirely in a browser tab: git is reimplemented in JavaScript (isomorphic-git), and the repository folder is read and written through the File System Access API.
 

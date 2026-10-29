@@ -9,7 +9,7 @@ let dir: string
 let ctx: Ctx
 
 beforeEach(async () => {
-  dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ramulus-web-'))
+  dir = fs.mkdtempSync(path.join(os.tmpdir(), 'braid-web-'))
   ctx = { fs, dir, cache: {} }
   await git.init({ fs, dir, defaultBranch: 'main' })
   await git.setConfig({ fs, dir, path: 'user.name', value: 'Test' })

@@ -1,15 +1,15 @@
 {
-  "name": "ramulus",
+  "name": "braid",
   "version": "0.6.3",
   "description": "Every branch of your repository in one graph. Runs a local server on top of your installed git and opens the UI in your browser.",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/a-ahandani/ramulus.git"
+    "url": "git+https://github.com/a-ahandani/braid.git"
   },
   "type": "module",
   "bin": {
-    "ramulus": "bin/ramulus.js"
+    "braid": "bin/braid.js"
   },
   "files": [
     "bin",

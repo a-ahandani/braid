@@ -28,7 +28,7 @@ jobs:
       - run: npm test
       - run: npm run build
         env:
-          BASE_PATH: /ramulus/
+          BASE_PATH: /braid/
       - uses: actions/upload-pages-artifact@v3
         with:
           path: web/dist

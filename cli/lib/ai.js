@@ -54,7 +54,7 @@ export async function ask(id, prompt, { signal, env = process.env, timeout = 300
   const agent = AGENTS.find((a) => a.id === id)
   const bin = agent && findBin(agent.bin, env)
   if (!bin) throw new Error('That AI agent is not installed')
-  const tmp = await mkdtemp(join(tmpdir(), 'ramulus-ai-'))
+  const tmp = await mkdtemp(join(tmpdir(), 'braid-ai-'))
   const out = join(tmp, 'reply.txt')
   const args = agent.args(out)
   try {
