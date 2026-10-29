@@ -195,7 +195,7 @@ export function createServer({ dir, root = dir, uiDir, token, stateFile = STATE 
       return
     }
     if (url.pathname.startsWith('/api/')) {
-      if (req.headers['x-braid-token'] !== token) {
+      if (req.headers['x-ramulus-token'] !== token) {
         sendJson(res, 401, { error: 'bad token' })
         return
       }

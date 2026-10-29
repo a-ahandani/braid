@@ -10,7 +10,7 @@ let dir
 const sh = (...args) => execFileSync('git', args, { cwd: dir, encoding: 'utf8', env: { ...process.env, GIT_AUTHOR_DATE: '2026-01-01T00:00:00', GIT_COMMITTER_DATE: '2026-01-01T00:00:00' } })
 
 before(() => {
-  dir = mkdtempSync(join(tmpdir(), 'braid-cli-'))
+  dir = mkdtempSync(join(tmpdir(), 'ramulus-cli-'))
   sh('init', '-q', '-b', 'main')
   sh('config', 'user.name', 'Test')
   sh('config', 'user.email', 't@example.com')
@@ -111,7 +111,7 @@ describe('rebase with local changes', () => {
   const read = (name) => readFileSync(join(repo, name), 'utf8')
 
   before(() => {
-    repo = mkdtempSync(join(tmpdir(), 'braid-rebase-'))
+    repo = mkdtempSync(join(tmpdir(), 'ramulus-rebase-'))
     g('init', '-q', '-b', 'main')
     g('config', 'core.autocrlf', 'false')
     g('config', 'user.name', 'Test')
@@ -196,7 +196,7 @@ describe('push when the remote moved on', () => {
   const g = (cwd, ...args) => execFileSync('git', ['-c', 'user.name=Test', '-c', 'user.email=t@example.com', ...args], { cwd, encoding: 'utf8' })
 
   before(() => {
-    root = mkdtempSync(join(tmpdir(), 'braid-push-'))
+    root = mkdtempSync(join(tmpdir(), 'ramulus-push-'))
     g(root, 'init', '-q', '--bare', '-b', 'main', 'remote.git')
     g(root, 'clone', '-q', 'remote.git', 'mine')
     writeFileSync(join(root, 'mine', 'a.txt'), 'a\n')
@@ -243,7 +243,7 @@ describe('switching to a remote branch', () => {
   const read = (f) => readFileSync(join(mine(), f), 'utf8')
 
   before(() => {
-    root = mkdtempSync(join(tmpdir(), 'braid-remote-'))
+    root = mkdtempSync(join(tmpdir(), 'ramulus-remote-'))
     g(root, 'init', '-q', '--bare', '-b', 'main', 'remote.git')
     g(root, 'clone', '-q', '-c', 'core.autocrlf=false', 'remote.git', 'mine')
     writeFileSync(join(mine(), 'a.txt'), 'one\n')

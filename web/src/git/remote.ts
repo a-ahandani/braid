@@ -4,7 +4,7 @@ import type { RefLabel, RepoData } from './repo'
 async function post<T>(base: string, token: string, op: string, body: object, signal?: AbortSignal): Promise<T> {
   const res = await fetch(`${base}/api/${op}`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json', 'x-braid-token': token },
+    headers: { 'content-type': 'application/json', 'x-ramulus-token': token },
     body: JSON.stringify(body),
     signal,
   })

@@ -24,7 +24,7 @@ import EditorWorker from 'monaco-editor/editor/editor.worker?worker'
 
 self.MonacoEnvironment = { getWorker: () => new EditorWorker() }
 
-monaco.editor.defineTheme('braid-dark', {
+monaco.editor.defineTheme('ramulus-dark', {
   base: 'vs-dark',
   inherit: true,
   rules: [
@@ -49,7 +49,7 @@ monaco.editor.defineTheme('braid-dark', {
   },
 })
 
-monaco.editor.defineTheme('braid-light', {
+monaco.editor.defineTheme('ramulus-light', {
   base: 'vs',
   inherit: true,
   rules: [
@@ -74,11 +74,11 @@ monaco.editor.defineTheme('braid-light', {
 })
 
 export function themeFor(look: string): string {
-  if (look === 'dark' || look === 'light') return `braid-${look}`
+  if (look === 'dark' || look === 'light') return `ramulus-${look}`
   const css = getComputedStyle(document.documentElement)
   const v = (name: string) => css.getPropertyValue(name).trim()
   const a = Array.from({ length: 16 }, (_, i) => v(`--ansi-${i}`).slice(1))
-  monaco.editor.defineTheme('braid-scheme', {
+  monaco.editor.defineTheme('ramulus-scheme', {
     base: document.documentElement.dataset.theme === 'light' ? 'vs' : 'vs-dark',
     inherit: true,
     rules: [
@@ -119,7 +119,7 @@ export function themeFor(look: string): string {
       'widget.border': v('--line'),
     },
   })
-  return 'braid-scheme'
+  return 'ramulus-scheme'
 }
 
 export function languageFor(path: string): string {

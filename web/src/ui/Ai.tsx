@@ -18,7 +18,7 @@ export function AiConsent(p: { agents: AiInfo['agents']; onAnswer: (choice?: str
   return (
     <Frame title="Use an AI agent?" cls="ai" onClose={() => p.onAnswer()}>
       <div>
-        Braid found {names(p.agents.map((a) => a.name))} on this computer. The one you pick drafts commit messages and branch names for you to review, and runs in a terminal panel where you can chat with it and have it fix conflicts with its own tools.
+        Ramulus found {names(p.agents.map((a) => a.name))} on this computer. The one you pick drafts commit messages and branch names for you to review, and runs in a terminal panel where you can chat with it and have it fix conflicts with its own tools.
       </div>
       <div>It uses its own sign-in, so you need no API key. The changes involved are sent to it, and it asks for your approval the same way it does in your own terminal.</div>
       {p.agents.length > 1 && (
@@ -49,7 +49,7 @@ export function AiSettingsDialog(p: { info: AiInfo; onSave: (s: AiSettings) => v
   return (
     <Frame title="AI agent" cls="ai" onClose={p.onClose}>
       {agents.length === 0 ? (
-        <div>No supported agent was found on your PATH. Braid looks for Claude Code, Codex, Gemini CLI and opencode, and uses the sign-in each one already has.</div>
+        <div>No supported agent was found on your PATH. Ramulus looks for Claude Code, Codex, Gemini CLI and opencode, and uses the sign-in each one already has.</div>
       ) : (
         <>
           <label>
@@ -79,7 +79,7 @@ export function AiSettingsDialog(p: { info: AiInfo; onSave: (s: AiSettings) => v
           <textarea value={s.prompts[k] ?? DEFAULT_PROMPTS[k]} onInput={(e) => setPrompt(k, (e.target as HTMLTextAreaElement).value)} />
         </div>
       ))}
-      <div class="hint">Braid adds the staged changes or the branch names after the first two prompts.</div>
+      <div class="hint">Ramulus adds the staged changes or the branch names after the first two prompts.</div>
       <Buttons ok="Save" enabled={true} onOk={() => (p.onSave(s), p.onClose())} onClose={p.onClose} />
     </Frame>
   )
