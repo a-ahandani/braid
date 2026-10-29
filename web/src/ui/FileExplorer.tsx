@@ -8,6 +8,20 @@ type Entry = { path: string; kind?: ChangeKind }
 
 const LIMIT = 500
 
+export function changedDirs(entries: Entry[]): Map<string, ChangeKind> {
+  const kinds = new Map<string, ChangeKind>()
+  for (const e of entries) {
+    if (!e.kind) continue
+    const parts = e.path.split('/')
+    for (let i = 1; i < parts.length; i++) {
+      const dir = parts.slice(0, i).join('/')
+      const had = kinds.get(dir)
+      kinds.set(dir, had && had !== e.kind ? 'M' : e.kind)
+    }
+  }
+  return kinds
+}
+
 export function FileExplorer(p: { load: () => Promise<string[]>; status: WorkStatus; stamp: unknown; selected?: string; onOpen: (path: string) => void }) {
   const [tracked, setTracked] = useState<string[]>()
   const [failed, setFailed] = useState(false)
@@ -31,6 +45,7 @@ export function FileExplorer(p: { load: () => Promise<string[]>; status: WorkSta
     return [...new Set([...(tracked ?? []), ...kinds.keys()])].sort().map((path): Entry => ({ path, kind: kinds.get(path) }))
   }, [tracked, p.status])
   const root = useMemo(() => buildTree(entries), [entries])
+  const dirKinds = useMemo(() => changedDirs(entries), [entries])
   const q = filter.trim().toLowerCase()
   const matches = q ? entries.filter((e) => e.path.toLowerCase().includes(q)) : []
 
@@ -62,10 +77,15 @@ export function FileExplorer(p: { load: () => Promise<string[]>; status: WorkSta
     const out: JSX.Element[] = []
     for (const d of kids.filter((c) => !c.file).sort((a, b) => a.name.localeCompare(b.name))) {
       const shown = open.has(d.path)
+      const kind = dirKinds.get(d.path)
       out.push(
-        <div key={d.path} class="file dir" style={{ paddingLeft: `${10 + depth * 14}px` }} onClick={() => toggle(d.path)}>
+        <div key={d.path} class="file dir" style={{ paddingLeft: `${10 + depth * 14}px` }} onClick={() => toggle(d.path)} title={kind ? 'Has changes' : undefined}>
           <Icon name={shown ? 'chevron-down' : 'chevron-right'} />
-          <span class="n">{d.name}</span>
+          <span class="n" style={kind ? { color: kindColor(kind) } : undefined}>
+            {d.name}
+          </span>
+          <span class="spacer" />
+          {kind && <span class="change-dot" style={{ background: kindColor(kind) }} />}
         </div>,
       )
       if (shown) out.push(...render(d, depth + 1))

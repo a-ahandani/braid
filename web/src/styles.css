@@ -1025,6 +1025,14 @@ a {
   flex: 1;
 }
 
+.file .change-dot {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  margin-right: 3px;
+  border-radius: 50%;
+}
+
 .file .stats {
   font-family: var(--mono);
   font-size: 11px;
