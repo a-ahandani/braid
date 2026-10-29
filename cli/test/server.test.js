@@ -53,6 +53,15 @@ describe('helper server', () => {
   })
 
 
+  it('offers the repositories nested inside the one it started in', async () => {
+    execFileSync('git', ['init', '-q', join(first, 'libs', 'inner')])
+    const r = (await call('findRepos')).result
+    assert.equal(r.root, first)
+    assert.equal(r.inside, true)
+    assert.deepEqual(r.repos.map((x) => x.name), ['inner'])
+    rmSync(join(first, 'libs'), { recursive: true, force: true })
+  })
+
   it('keeps preferences across runs', async () => {
     assert.deepEqual((await call('prefs')).result, {})
     await call('setPrefs', { prefs: { theme: 'light', scheme: { id: 'x' } } })

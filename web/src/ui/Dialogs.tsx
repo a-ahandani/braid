@@ -15,7 +15,7 @@ export type Dialog =
   | { kind: 'error'; title: string; message: string }
   | { kind: 'settings' }
   | { kind: 'push-rejected'; branch: string; ahead: number; behind: number; rebase: () => void; merge: () => void; force: () => void }
-  | { kind: 'repos'; folder: string; repos: { dir: string; name: string }[]; open: (dirs: string[]) => void }
+  | { kind: 'repos'; folder: string; inside?: boolean; repos: { dir: string; name: string }[]; open: (dirs: string[]) => void }
   | { kind: 'scheme' }
 
 export interface DialogProps {
@@ -183,9 +183,17 @@ export function Dialogs(p: DialogProps) {
           return next
         })
       return (
-        <Frame title="Open the repositories in this folder?" onClose={p.onClose}>
+        <Frame title={d.inside ? 'Open the repositories inside this one?' : 'Open the repositories in this folder?'} onClose={p.onClose}>
           <div>
-            <code>{d.folder}</code> is not a git repository. It has {d.repos.length === 1 ? 'one repository' : `${d.repos.length} repositories`} inside, and each one you pick opens in the sidebar.
+            {d.inside ? (
+              <>
+                <code>{d.folder}</code> has {d.repos.length === 1 ? 'another repository' : `${d.repos.length} more repositories`} in its subfolders. Each one you pick opens in the sidebar next to it.
+              </>
+            ) : (
+              <>
+                <code>{d.folder}</code> is not a git repository. It has {d.repos.length === 1 ? 'one repository' : `${d.repos.length} repositories`} inside, and each one you pick opens in the sidebar.
+              </>
+            )}
           </div>
           {d.repos.length > 1 && (
             <div class="input-row">

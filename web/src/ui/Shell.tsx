@@ -241,7 +241,7 @@ export function Shell() {
   }
 
   const openMany = async (dirs: string[]) => {
-    for (const d of dirs) await openPath(d)
+    for (const d of dirs) await openPath(d, tabsRef.current.length === 0)
   }
 
   const browse = async () => {
@@ -288,11 +288,10 @@ export function Shell() {
           for (const r of pins) pinnedKeys.current.add(r.dir)
           if (current) openInfo(current)
           for (const r of pins) if (r.dir !== current?.dir) await openPath(r.dir, false)
-          if (current) return
-          const { root, repos } = await helper!.findRepos()
+          const { root, inside, repos } = await helper!.findRepos()
           setFound(repos)
           const unopened = repos.filter((r) => !tabsRef.current.some((t) => t.key === r.dir))
-          if (unopened.length) setDialog({ kind: 'repos', folder: root, repos: unopened, open: openMany })
+          if (unopened.length) setDialog({ kind: 'repos', folder: root, inside, repos: unopened, open: openMany })
         })
         .catch((e) => fail('Could not reach the helper', e))
     else get<FileSystemDirectoryHandle[]>('recent').then((r) => r && setHandles(r))

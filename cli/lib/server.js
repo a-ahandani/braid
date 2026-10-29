@@ -136,7 +136,10 @@ export function createServer({ dir, root = dir, uiDir, token, stateFile = STATE 
       await mkdir(dirname(prefsFile), { recursive: true })
       await writeFile(prefsFile, text)
     },
-    findRepos: async () => ({ root, repos: dir || root === homedir() ? [] : (await git.findRepos(root)).map(info) }),
+    findRepos: async () => {
+      const at = dir ?? root
+      return { root: at, inside: !!dir, repos: at === homedir() ? [] : (await git.findRepos(at)).map(info) }
+    },
     pickFolder: () => git.pickFolder(),
     ai: async () => ({ agents: ai.detect(), settings: await readAi() }),
     setAi: async (b) => {

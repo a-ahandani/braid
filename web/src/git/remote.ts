@@ -21,7 +21,7 @@ export interface RepoInfo {
 export function helperShell(base: string, token: string) {
   return {
     repos: () => post<{ current: RepoInfo | null; recent: RepoInfo[] }>(base, token, 'repos', {}),
-    findRepos: () => post<{ root: string; repos: RepoInfo[] }>(base, token, 'findRepos', {}),
+    findRepos: () => post<{ root: string; inside: boolean; repos: RepoInfo[] }>(base, token, 'findRepos', {}),
     pins: () => post<RepoInfo[]>(base, token, 'pins', {}),
     setPins: (dirs: string[]) => post<void>(base, token, 'setPins', { dirs }),
     prefs: () => post<Record<string, unknown>>(base, token, 'prefs', {}),
