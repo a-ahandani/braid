@@ -21,4 +21,4 @@ Options: `--port N` to pick a port, `--no-open` to only print the URL.
 - Optional help from the AI agent you already use (Claude Code, Codex, Gemini CLI or opencode), with no API key: draft commit messages and branch names, and run the agent's own interactive tool in a terminal panel (⌃\`) to chat with it or have it fix conflicts. Ramulus asks first and sends nothing until you turn it on.
 - A movable, resizable diff window on Monaco where every opened file is a tab, with side-by-side or inline layout, hidden-region folds, an editable working-tree side saved with ⌘S, and block-level stage, unstage and discard; drag a branch label onto a commit to merge or rebase; solo branches; command palette (⌘⇧P); shortcuts list (?); tree or flat file lists with +/− counts; resizable panels; status bar; light and dark themes.
 
-Source and the native desktop app: https://github.com/a-ahandani/ramulus
+Source: https://github.com/a-ahandani/ramulus
