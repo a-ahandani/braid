@@ -5,6 +5,14 @@ export type PullMode = 'merge' | 'ff-only' | 'rebase'
 export type ResetMode = 'soft' | 'mixed' | 'hard'
 export type MergeResult = 'up-to-date' | 'fast-forward' | 'merged' | 'conflicts' | 'done'
 
+export interface RemoteSwitch {
+  result: 'created' | 'updated' | 'up-to-date' | 'diverged'
+  local: string
+  ahead?: number
+  behind?: number
+  stash?: 'kept' | 'conflicts'
+}
+
 export type PushResult = { result: 'pushed' } | { result: 'rejected'; ahead: number; behind: number; theirs: string }
 
 export interface RebaseResult {
@@ -44,7 +52,7 @@ export interface Backend {
   discard(files: FileChange[]): Promise<void>
   commit(message: string, amend: boolean): Promise<unknown>
   checkoutBranch(name: string): Promise<void>
-  checkoutRemote(name: string): Promise<void>
+  checkoutRemote(name: string): Promise<RemoteSwitch | void>
   checkoutCommit(oid: string): Promise<void>
   createBranch(name: string, at: string, checkout: boolean): Promise<void>
   deleteBranch(name: string): Promise<void>

@@ -234,3 +234,102 @@ describe('push when the remote moved on', () => {
     assert.equal(remoteTip(), g(mine, 'rev-parse', 'HEAD').trim())
   })
 })
+
+describe('switching to a remote branch', () => {
+  let root
+  const g = (cwd, ...args) => execFileSync('git', ['-c', 'user.name=Test', '-c', 'user.email=t@example.com', ...args], { cwd, encoding: 'utf8' })
+  const mine = () => join(root, 'mine')
+  const theirs = () => join(root, 'theirs')
+  const read = (f) => readFileSync(join(mine(), f), 'utf8')
+
+  before(() => {
+    root = mkdtempSync(join(tmpdir(), 'ramulus-remote-'))
+    g(root, 'init', '-q', '--bare', '-b', 'main', 'remote.git')
+    g(root, 'clone', '-q', 'remote.git', 'mine')
+    g(mine(), 'config', 'core.autocrlf', 'false')
+    writeFileSync(join(mine(), 'a.txt'), 'one\n')
+    writeFileSync(join(mine(), 'b.txt'), 'b\n')
+    g(mine(), 'add', '.')
+    g(mine(), 'commit', '-qm', 'base')
+    g(mine(), 'push', '-q', 'origin', 'main')
+    g(mine(), 'switch', '-q', '-c', 'feature')
+    g(mine(), 'push', '-q', '-u', 'origin', 'feature')
+    g(root, 'clone', '-q', 'remote.git', 'theirs')
+    g(theirs(), 'config', 'core.autocrlf', 'false')
+  })
+
+  after(() => rmSync(root, { recursive: true, force: true }))
+
+  const theirCommit = (branch, file, text) => {
+    g(theirs(), 'switch', '-q', branch)
+    writeFileSync(join(theirs(), file), text)
+    g(theirs(), 'commit', '-qam', `edit ${file}`)
+    g(theirs(), 'push', '-q', 'origin', branch)
+    g(mine(), 'fetch', '-q')
+  }
+
+  it('fast-forwards the local branch and keeps uncommitted and staged changes', async () => {
+    theirCommit('feature', 'a.txt', 'one\ntwo\n')
+    g(mine(), 'switch', '-q', 'main')
+    writeFileSync(join(mine(), 'b.txt'), 'b changed\n')
+    g(mine(), 'add', 'b.txt')
+    assert.deepEqual(await git.checkoutRemote(mine(), 'origin/feature'), { result: 'updated', local: 'feature', ahead: 0, behind: 1, stash: 'kept' })
+    assert.equal(g(mine(), 'branch', '--show-current').trim(), 'feature')
+    assert.equal(read('a.txt'), 'one\ntwo\n')
+    assert.equal(g(mine(), 'status', '--porcelain'), 'M  b.txt\n')
+    assert.equal(g(mine(), 'stash', 'list'), '')
+    g(mine(), 'reset', '-q', '--hard')
+  })
+
+  it('creates a tracking branch when there is no local one', async () => {
+    g(theirs(), 'switch', '-q', '-c', 'fresh')
+    g(theirs(), 'push', '-q', '-u', 'origin', 'fresh')
+    g(mine(), 'fetch', '-q')
+    assert.deepEqual(await git.checkoutRemote(mine(), 'origin/fresh'), { result: 'created', local: 'fresh' })
+    assert.equal(g(mine(), 'rev-parse', '--abbrev-ref', '@{u}').trim(), 'origin/fresh')
+  })
+
+  it('switches without rewriting anything when both sides have commits', async () => {
+    g(mine(), 'switch', '-q', 'feature')
+    writeFileSync(join(mine(), 'c.txt'), 'mine\n')
+    g(mine(), 'add', '.')
+    g(mine(), 'commit', '-qm', 'my work')
+    const tip = g(mine(), 'rev-parse', 'HEAD').trim()
+    theirCommit('feature', 'a.txt', 'one\ntwo\nthree\n')
+    g(mine(), 'switch', '-q', 'main')
+    assert.equal((await git.checkoutRemote(mine(), 'origin/feature')).result, 'diverged')
+    assert.equal(g(mine(), 'rev-parse', 'HEAD').trim(), tip)
+  })
+
+  it('puts the changes back when the switch itself fails', async () => {
+    g(theirs(), 'switch', '-q', '-c', 'blocked', 'origin/main')
+    writeFileSync(join(theirs(), 'c.txt'), 'theirs\n')
+    g(theirs(), 'add', '.')
+    g(theirs(), 'commit', '-qm', 'add c')
+    g(theirs(), 'push', '-q', '-u', 'origin', 'blocked')
+    g(mine(), 'fetch', '-q')
+    g(mine(), 'switch', '-q', 'main')
+    g(mine(), 'reset', '-q', '--hard')
+    writeFileSync(join(mine(), 'a.txt'), 'edited\n')
+    writeFileSync(join(mine(), 'c.txt'), 'untracked\n')
+    await assert.rejects(git.checkoutRemote(mine(), 'origin/blocked'), /untracked|overwritten/i)
+    assert.equal(g(mine(), 'branch', '--show-current').trim(), 'main')
+    assert.equal(read('a.txt'), 'edited\n')
+    assert.equal(read('c.txt'), 'untracked\n')
+    assert.equal(g(mine(), 'stash', 'list'), '')
+    rmSync(join(mine(), 'c.txt'))
+    g(mine(), 'reset', '-q', '--hard')
+  })
+
+  it('keeps the changes in the stash when putting them back conflicts', async () => {
+    g(mine(), 'switch', '-q', 'main')
+    theirCommit('main', 'b.txt', 'theirs\n')
+    g(mine(), 'reset', '-q', '--hard', 'HEAD')
+    writeFileSync(join(mine(), 'b.txt'), 'mine\n')
+    const r = await git.checkoutRemote(mine(), 'origin/main')
+    assert.equal(r.result, 'updated')
+    assert.equal(r.stash, 'conflicts')
+    assert.match(g(mine(), 'stash', 'list'), /autostash/)
+    assert.match(read('b.txt'), /<<<<<<<|mine/)
+  })
+})

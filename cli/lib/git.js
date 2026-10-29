@@ -377,10 +377,28 @@ export async function checkoutBranch(dir, name) {
 
 export async function checkoutRemote(dir, name) {
   safeName(name)
-  const i = name.indexOf('/')
-  const local = name.slice(i + 1)
+  const local = name.slice(name.indexOf('/') + 1)
   const exists = (await run(dir, ['rev-parse', '-q', '--verify', `refs/heads/${local}`], { allowFail: true })).ok
-  await run(dir, exists ? ['switch', '-q', local] : ['switch', '-q', '-c', local, '--track', name])
+  const dirty = (await run(dir, ['status', '--porcelain', '-uno'])).stdout.trim() !== ''
+  if (dirty) await run(dir, ['stash', 'push', '-q', '-m', 'autostash'])
+  let out
+  try {
+    if (!exists) {
+      await run(dir, ['switch', '-q', '-c', local, '--track', name])
+      out = { result: 'created', local }
+    } else {
+      await run(dir, ['switch', '-q', local])
+      const [ahead = 0, behind = 0] = (await run(dir, ['rev-list', '--left-right', '--count', `HEAD...${name}`])).stdout.trim().split(/\s+/).map(Number)
+      if (behind && !ahead) await run(dir, ['merge', '-q', '--ff-only', name])
+      out = { result: behind ? (ahead ? 'diverged' : 'updated') : 'up-to-date', local, ahead, behind }
+    }
+  } catch (e) {
+    if (dirty) await run(dir, ['stash', 'pop', '-q', '--index'], { allowFail: true })
+    throw e
+  }
+  if (!dirty) return out
+  const back = (await run(dir, ['stash', 'pop', '-q', '--index'], { allowFail: true })).ok || (!(await hasUnmerged(dir)) && (await run(dir, ['stash', 'pop', '-q'], { allowFail: true })).ok)
+  return { ...out, stash: back ? 'kept' : 'conflicts' }
 }
 
 export async function checkoutCommit(dir, oid) {

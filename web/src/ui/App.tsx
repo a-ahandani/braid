@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'preact/hooks'
 import { DEFAULT_PROMPTS, branchName, fillPrompt, splitMessage } from '../git/ai'
-import type { AiInfo, AiSettings, Backend, PullMode, PushResult, RebaseResult } from '../git/backend'
+import type { AiInfo, AiSettings, Backend, PullMode, PushResult, RebaseResult, RemoteSwitch } from '../git/backend'
 import { layout, type RowLayout } from '../git/graph'
 import { PAGE, type Commit, type DiffArea, type FileChange, type NetSettings, type RepoData } from '../git/repo'
 import type { Scheme } from '../git/scheme'
@@ -566,7 +566,7 @@ export function App(p: { be: Backend; active: boolean; theme: Theme; onTheme: (t
   const remoteItems = (name: string): MenuItem[] => {
     const v = view!
     return [
-      { label: `Switch to ${name}`, onClick: () => run('Switching branch', () => v.be.checkoutRemote(name)) },
+      { label: `Switch to ${name}`, onClick: () => switchRemote(name) },
       ...(head ? [{ label: `Merge ${name} into ${head}`, onClick: () => mergeInto(name) }] : []),
       ...(head && v.be.rebase ? [{ label: `Rebase ${head} onto ${name}`, onClick: () => rebaseOnto(name) }] : []),
       { label: solo.has(name) ? `Stop soloing ${name}` : `Solo ${name}`, onClick: () => toggleSolo(name) },
@@ -717,10 +717,31 @@ export function App(p: { be: Backend; active: boolean; theme: Theme; onTheme: (t
   useEffect(() => p.onDirty(anyDirty), [anyDirty])
   const setTabDirty = (key: string, d: boolean) => setDiffTabs((ts) => ts.map((t) => (t.key === key && t.dirty !== d ? { ...t, dirty: d } : t)))
 
+  const switchRemote = (name: string) => {
+    const v = view
+    if (!v) return
+    const commits = (k = 0) => `${k} commit${k === 1 ? '' : 's'}`
+    run('Switching branch', () => v.be.checkoutRemote(name), {
+      after: (x) => {
+        const r = x as RemoteSwitch | void
+        if (!r) return
+        const said =
+          r.result === 'created'
+            ? `Switched to ${r.local}, a new branch tracking ${name}.`
+            : r.result === 'updated'
+              ? `Switched to ${r.local} and brought in ${commits(r.behind)} from ${name}.`
+              : r.result === 'diverged'
+                ? `Switched to ${r.local}. It has ${commits(r.ahead)} that ${name} doesn't, so it was not updated. Pull to combine them.`
+                : `Switched to ${r.local}, already up to date with ${name}.`
+        setToast(r.stash === 'conflicts' ? `${said} Your uncommitted changes conflicted when they were put back.` : r.stash === 'kept' ? `${said} Your uncommitted changes came along.` : said)
+      },
+    })
+  }
+
   const pillDoubleClick = (pill: PillData) => {
     if (!view) return
     if (pill.local && !pill.current) run('Switching branch', () => view.be.checkoutBranch(pill.local!.name))
-    else if (pill.remote && !pill.local) run('Switching branch', () => view.be.checkoutRemote(pill.remote!.name))
+    else if (pill.remote && !pill.local) switchRemote(pill.remote!.name)
   }
 
   const onDrop = ({ source, rowIndex, x, y }: DropInfo) => {
@@ -773,7 +794,7 @@ export function App(p: { be: Backend; active: boolean; theme: Theme; onTheme: (t
       list.push({ id: `solo:${b.name}`, group: 'Branch', label: `Solo ${b.name}`, run: () => toggleSolo(b.name) })
       list.push({ id: `jump:${b.name}`, group: 'Branch', label: `Jump to ${b.name}`, run: () => jump(b.oid) })
     }
-    for (const b of v.data.remote) list.push({ id: `swr:${b.name}`, group: 'Remote', label: `Switch to ${b.name}`, run: () => run('Switching branch', () => v.be.checkoutRemote(b.name)) })
+    for (const b of v.data.remote) list.push({ id: `swr:${b.name}`, group: 'Remote', label: `Switch to ${b.name}`, run: () => switchRemote(b.name) })
     for (const t of v.data.tags) list.push({ id: `tag:${t.name}`, group: 'Tag', label: `Jump to ${t.name}`, run: () => jump(t.oid) })
     return list
   }, [view, head, pullMode, theme, tree, solo, aiInfo, aiReady, drawer, drawerShown])
@@ -1012,7 +1033,7 @@ export function App(p: { be: Backend; active: boolean; theme: Theme; onTheme: (t
           onToggleSolo={toggleSolo}
           onJump={jump}
           onCheckout={(name) => run('Switching branch', () => v.be.checkoutBranch(name))}
-          onCheckoutRemote={(name) => run('Switching branch', () => v.be.checkoutRemote(name))}
+          onCheckoutRemote={(name) => switchRemote(name)}
           onBranchMenu={(e, name, oid, isHead) => setMenu({ x: e.clientX, y: e.clientY, items: branchItems(name, oid, isHead) })}
           onRemoteMenu={(e, name) => setMenu({ x: e.clientX, y: e.clientY, items: remoteItems(name) })}
           onTagMenu={(e, name, oid) => setMenu({ x: e.clientX, y: e.clientY, items: tagItems(name, oid) })}
