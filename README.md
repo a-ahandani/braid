@@ -2,7 +2,7 @@
 
 # Ramulus
 
-A local-first Git GUI. Every branch in one graph, editor-grade diffs, and your repositories in a sidebar. No account, no cloud, no telemetry.
+Super visual Git for vibe coding. Your AI agent writes the code; you see every branch and every change, and decide what lands. A local-first Git GUI with every branch in one graph, editor-grade diffs and your repositories in a sidebar. No account, no cloud, no telemetry.
 
 ```sh
 npx ramulus
@@ -10,12 +10,13 @@ npx ramulus
 
 Run it inside any git repository, or pass a path: `npx ramulus ~/code/app`. Run it in a folder that holds several repositories, such as `~/code`, and it offers to open each one in the sidebar. Run it in a repository that has others in its subfolders, and it offers those too. Ramulus starts a small server on 127.0.0.1 on top of the `git` you already have and opens the UI in your browser. It needs Node 20 or newer and `git`, and works on macOS, Windows and Linux.
 
-![Ramulus in use: opening three repositories, staging one change block, an AI agent drafting the commit message, dragging a branch onto main to merge it, switching to a color scheme from a link, and jumping to another repository](docs/demo.gif)
+![Ramulus in use: Claude Code adding a feature in the agent panel and the change reviewed as a diff, two change blocks staged and the commit message drafted by the agent, a branch dragged onto main to merge it, a remote branch switched to with a double-click, every repository pulled at once, and a color scheme taken from a link](docs/demo.gif)
 
-[Download the demo in full quality (MP4, 1.4 MB)](https://github.com/a-ahandani/ramulus/raw/main/docs/demo.mp4) · [Website](https://a-ahandani.github.io/ramulus/)
+[Download the demo in full quality (MP4, 5.7 MB)](https://github.com/a-ahandani/ramulus/raw/main/docs/demo.mp4) · [Website](https://a-ahandani.github.io/ramulus/)
 
 ## Why Ramulus
 
+- **Visual control while your agent codes.** Let Claude Code, Codex, Gemini CLI or opencode write the code in a panel beside the graph. Every edit shows up as a diff and every branch as a lane, so you review what it did and choose what to stage and commit.
 - **Your git, unchanged.** Every operation runs through the git binary you already use, so SSH keys, credential helpers, hooks and LFS behave exactly as they do in the terminal.
 - **Nothing leaves your machine unless you ask.** The server listens on 127.0.0.1 and every request carries a per-run token. The only outside requests are your own git remotes, avatar lookups on gravatar.com, pull request lookups through the GitHub CLI when you have it installed, and, if you turn it on, the AI agent you already use.
 - **One command.** No installer, no sign-in, no license key. Close the terminal and it is gone.
@@ -26,7 +27,7 @@ Ramulus is Latin for a small branch.
 
 ### History you can read
 
-![The branch graph of a repository with local and remote branches, a tag, a stash and uncommitted changes](docs/screenshots/overview.png)
+![The branch graph of a repository with local and remote branches, two tags, a stash and uncommitted changes, with a commit and its changed file selected](docs/screenshots/overview.png)
 
 - A lane graph with merge, stash and work-in-progress nodes, author avatars, and one label per branch with ahead and behind counts against its upstream.
 - Search commits by message, author, hash or ref. Solo one or two branches to see only their history.
@@ -37,7 +38,7 @@ Ramulus is Latin for a small branch.
 
 ### Diffs and staging
 
-![A floating diff window with two file tabs open beside the staging lists](docs/screenshots/diff.png)
+![A diff window beside the commit box, with two change blocks staged and a commit message drafted by the AI agent](docs/screenshots/diff.png)
 
 - Every file you click opens as a tab in one diff window that fills the space beside the left panel and follows it as panels change. Move it, resize it from any edge, or maximize it. Unchanged regions are collapsed until you open them.
 - The left panel has three tabs: Branches, Changes (the commit box, or the selected commit's files) and Files, which shows the whole working tree with changed files marked. A file opened from Files opens in a plain editor instead of a diff.
@@ -47,7 +48,7 @@ Ramulus is Latin for a small branch.
 
 ### Repositories in tabs
 
-![Two repositories open in tabs, light theme, with a merge commit selected](docs/screenshots/light.png)
+![Four repositories in the sidebar, in the Catppuccin Latte color scheme taken from a terminalcolors.com link](docs/screenshots/light.png)
 
 - Open several repositories at once from recent repositories, the system folder picker, a typed path, or the repositories found in the folder you started from. They live in a left sidebar that stays docked or auto-hides, with pinned repositories at the top and ⌘⇧A to search. Each one shows its branch, its uncommitted changes and what it has to push or pull. Each one keeps its own selection, filters and draft commit message.
 - Pull all (fast-forward only) and Fetch all update every open repository, three at a time so the app stays responsive.
@@ -58,6 +59,8 @@ Ramulus is Latin for a small branch.
 - Resizable panels, tree or flat file lists with +/− counts, and a status bar with sync, change and stash counts and a refresh button.
 
 ### Your AI agent, if you want one
+
+![Claude Code in the agent panel below the graph, summarising the change it just made](docs/screenshots/agent.png)
 
 - Ramulus looks for Claude Code, Codex, Gemini CLI and opencode on your PATH and asks before using any of them. Pick one if several are installed. Each uses its own sign-in, so there is no API key to add.
 - The sparkle in the commit box drafts a message from the staged changes, and the one in the new-branch dialog suggests a name. Both fill the field for you to review and edit.
