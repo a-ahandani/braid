@@ -3,12 +3,21 @@ import { useEffect, useRef, useState } from 'preact/hooks'
 import { Icon } from './bits'
 import { fuzzyScore } from './Palette'
 
+export interface RepoSummary {
+  branch: string
+  changes: number
+  ahead: number
+  behind: number
+  busy: boolean
+}
+
 export interface SideTab {
   id: number
   name: string
   title: string
   pinned: boolean
   dirty: boolean
+  summary?: RepoSummary
 }
 
 export interface SideRecent {
@@ -45,11 +54,10 @@ export function Sidebar(p: {
   onClose: (id: number) => void
   onPin: (id: number) => void
   onOpen: () => void
-  onPullAll: () => void
-  onFetchAll: () => void
+  onMore: (at: DOMRect) => void
+  onDock: () => void
   running?: string
   status?: string
-  onDock: (docked: boolean) => void
   onEnter: () => void
   onLeave: () => void
 }) {
@@ -107,6 +115,7 @@ export function Sidebar(p: {
     }
   }
 
+  const shared = new Set(p.tabs.filter((t, i) => p.tabs.findIndex((x) => x.name === t.name) !== i).map((t) => t.name))
   const tabRow = (t: SideTab, index: number) => (
     <div
       key={t.id}
@@ -119,14 +128,35 @@ export function Sidebar(p: {
       }}
     >
       <button class="sb-main" aria-current={t.id === p.active ? 'true' : undefined} onClick={() => pick({ kind: 'tab', tab: t })}>
-        <Icon name="repo" />
         <span class="text">
-          <span class="name">{highlight(t.name, q)}</span>
-          <span class="where">{folderOf(t.title)}</span>
+          <span class="name">
+            {highlight(t.name, q)}
+            <span class="dot" title="Unsaved edits">
+              <Icon name="circle-filled" />
+            </span>
+          </span>
+          <span class="where">
+            {t.summary?.branch && (
+              <>
+                <Icon name="git-branch" />
+                {t.summary.branch}
+              </>
+            )}
+            {shared.has(t.name) && ` · ${folderOf(t.title)}`}
+          </span>
         </span>
-        <span class="dot" title="Unsaved edits">
-          <Icon name="circle-filled" />
-        </span>
+        {t.summary && (
+          <span class="sb-state">
+            {t.summary.busy && <Icon name="sync" />}
+            {t.summary.changes > 0 && (
+              <span class="changes" title={`${t.summary.changes} uncommitted ${t.summary.changes === 1 ? 'change' : 'changes'}`}>
+                {t.summary.changes}
+              </span>
+            )}
+            {t.summary.ahead > 0 && <span title={`${t.summary.ahead} to push`}>↑{t.summary.ahead}</span>}
+            {t.summary.behind > 0 && <span title={`${t.summary.behind} to pull`}>↓{t.summary.behind}</span>}
+          </span>
+        )}
       </button>
       <span class="acts">
         <button class="icon" title={t.pinned ? 'Unpin' : 'Pin to the top'} aria-label={t.pinned ? `Unpin ${t.name}` : `Pin ${t.name}`} onClick={() => p.onPin(t.id)}>
@@ -151,16 +181,15 @@ export function Sidebar(p: {
     >
       <div class="sb-head">
         <span class="title">Repositories</span>
-        <button class="icon" disabled={!!p.running || p.tabs.length === 0} title="Fetch every open repository" aria-label="Fetch every open repository" onClick={p.onFetchAll}>
-          <Icon name="cloud-download" />
-        </button>
-        <button class="icon" disabled={!!p.running || p.tabs.length === 0} title="Pull every open repository (fast-forward only)" aria-label="Pull every open repository" onClick={p.onPullAll}>
-          <Icon name="arrow-circle-down" />
-        </button>
-        <button class="icon" title="Open repository…" aria-label="Open repository" onClick={p.onOpen}>
+        <button class="icon" title="Open a repository" aria-label="Open a repository" onClick={p.onOpen}>
           <Icon name="add" />
         </button>
-        <button class={`icon ${p.docked ? 'on' : ''}`} title={p.docked ? 'Auto-hide the sidebar' : 'Keep the sidebar open'} aria-label={p.docked ? 'Auto-hide the sidebar' : 'Keep the sidebar open'} onClick={() => p.onDock(!p.docked)}>
+        {p.tabs.length > 0 && (
+          <button class="icon" disabled={!!p.running} title="Fetch or pull every repository" aria-label="Fetch or pull every repository" onClick={(e) => p.onMore((e.currentTarget as HTMLElement).getBoundingClientRect())}>
+            <Icon name="ellipsis" />
+          </button>
+        )}
+        <button class={`icon ${p.docked ? 'on' : ''}`} title={p.docked ? 'Unpin: slide in from the left edge when needed' : 'Pin the sidebar open'} aria-label={p.docked ? 'Unpin the sidebar' : 'Pin the sidebar open'} aria-pressed={p.docked} onClick={p.onDock}>
           <Icon name={p.docked ? 'pinned' : 'pin'} />
         </button>
       </div>

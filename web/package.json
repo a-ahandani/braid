@@ -15,14 +15,17 @@
     "@xterm/addon-fit": "^0.11.0",
     "@xterm/xterm": "^6.0.0",
     "buffer": "^6.0.3",
+    "dompurify": "3.4.17",
     "idb-keyval": "^6.3.0",
     "isomorphic-git": "^1.44.5",
+    "marked": "14.0.0",
     "monaco-editor": "^0.57.0",
     "preact": "^11.0.2"
   },
   "devDependencies": {
     "@preact/preset-vite": "^2.10.6",
     "@types/node": "^24.19.2",
+    "jsdom": "^30.1.3",
     "typescript": "~7.0.2",
     "vite": "^8.3.5",
     "vitest": "^5.0.5"

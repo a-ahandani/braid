@@ -17,7 +17,7 @@ Run it inside any git repository, or pass a path: `npx ramulus ~/code/app`. Run 
 ## Why Ramulus
 
 - **Your git, unchanged.** Every operation runs through the git binary you already use, so SSH keys, credential helpers, hooks and LFS behave exactly as they do in the terminal.
-- **Nothing leaves your machine unless you ask.** The server listens on 127.0.0.1 and every request carries a per-run token. The only outside requests are your own git remotes, avatar lookups on gravatar.com, and, if you turn it on, the AI agent you already use.
+- **Nothing leaves your machine unless you ask.** The server listens on 127.0.0.1 and every request carries a per-run token. The only outside requests are your own git remotes, avatar lookups on gravatar.com, pull request lookups through the GitHub CLI when you have it installed, and, if you turn it on, the AI agent you already use.
 - **One command.** No installer, no sign-in, no license key. Close the terminal and it is gone.
 
 Ramulus is Latin for a small branch.
@@ -49,12 +49,13 @@ Ramulus is Latin for a small branch.
 
 ![Two repositories open in tabs, light theme, with a merge commit selected](docs/screenshots/light.png)
 
-- Open several repositories at once from recent repositories, the system folder picker, a typed path, or the repositories found in the folder you started from. They live in a left sidebar that stays docked or auto-hides, with pinned repositories at the top and ⌘⇧A to search. Each one keeps its own selection, filters and draft commit message.
-- Pull all (fast-forward only) and Fetch all update every open repository at once.
+- Open several repositories at once from recent repositories, the system folder picker, a typed path, or the repositories found in the folder you started from. They live in a left sidebar that stays docked or auto-hides, with pinned repositories at the top and ⌘⇧A to search. Each one shows its branch, its uncommitted changes and what it has to push or pull. Each one keeps its own selection, filters and draft commit message.
+- Pull all (fast-forward only) and Fetch all update every open repository, three at a time so the app stays responsive.
+- Branches with a pull request on GitHub show its number. Click it to open the pull request in Ramulus: description, checks (refreshing while they run), reviews, comments, commits and changed files, with GitHub's Merge options (merge commit, squash, rebase). It all goes through the GitHub CLI (`gh`) you are already signed in to, links and markdown from GitHub are sanitized and images are not loaded, and Ramulus fetches after a merge so it shows in the graph.
 - Rebase with uncommitted changes: they are stashed and put back for you, and the rebase can be undone afterwards. A rejected push offers rebase, merge or a safe force push instead of an error.
 - Only the visible tab watches its folder, so hidden tabs cost nothing and catch up when you come back.
 - Light and dark themes, or any color scheme from [terminalcolors.com](https://terminalcolors.com/): paste the link of its page and the whole app, the diff and the agent terminal take its colors.
-- Resizable panels, tree or flat file lists with +/− counts, and a status bar with branch, sync and change counts.
+- Resizable panels, tree or flat file lists with +/− counts, and a status bar with sync, change and stash counts and a refresh button.
 
 ### Your AI agent, if you want one
 

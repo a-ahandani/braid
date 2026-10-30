@@ -1,16 +1,17 @@
 import { get, set } from 'idb-keyval'
 import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks'
 import { FsaFs } from '../fs/fsa'
-import type { Backend } from '../git/backend'
+import type { Backend, MergeMethod } from '../git/backend'
 import { demoRepo } from '../git/demo'
 import { helperShell, httpBackend, type RepoInfo } from '../git/remote'
 import { localBackend } from '../git/repo'
 import { isScheme, schemeVars, type Scheme } from '../git/scheme'
 import { App, loadSettings, type TabApi, type Theme } from './App'
-import { BrandLinks, BrandMark, Icon, settleLimited } from './bits'
+import { BrandLinks, BrandMark, Icon, SidebarToggle, settleLimited } from './bits'
 import { Dialogs, type Dialog } from './Dialogs'
+import { Menu, type MenuState } from './Menu'
 import { Palette, type Command } from './Palette'
-import { Sidebar, type SideRecent } from './Sidebar'
+import { Sidebar, type RepoSummary, type SideRecent } from './Sidebar'
 import { Splitter } from './Splitter'
 
 interface Tab {
@@ -62,6 +63,8 @@ const fallbackAuthor = () => {
 const keepsSidebar = () => !!document.querySelector('.sidebar :focus-visible')
 
 const ALL_AT_ONCE = 3
+const sameSummary = (a: RepoSummary | undefined, b: RepoSummary) => !!a && a.branch === b.branch && a.changes === b.changes && a.ahead === b.ahead && a.behind === b.behind && a.busy === b.busy
+const isMergeMethod = (m: unknown): m is MergeMethod => m === 'merge' || m === 'squash' || m === 'rebase'
 
 export function Shell() {
   const [tabs, setTabs] = useState<Tab[]>([])
@@ -70,6 +73,9 @@ export function Shell() {
   const [scheme, setScheme] = useState<Scheme | undefined>(initialScheme)
   const applied = useRef<string[]>([])
   const prefsReady = useRef(!helper)
+  const [mergeMethod, setMergeMethod] = useState<MergeMethod>('merge')
+  const [summaries, setSummaries] = useState<Record<number, RepoSummary>>({})
+  const [menu, setMenu] = useState<MenuState>()
   const [picker, setPicker] = useState(false)
   const [recentRepos, setRecentRepos] = useState<RepoInfo[]>([])
   const [found, setFound] = useState<RepoInfo[]>([])
@@ -78,6 +84,10 @@ export function Shell() {
   const [dirty, setDirty] = useState<Set<number>>(new Set())
   const [docked, setDocked] = useState(() => localStorage.getItem('ramulus.sidebar') !== 'auto')
   const [shown, setShown] = useState(false)
+  const toggleDock = () => {
+    setDocked((d) => !d)
+    setShown(false)
+  }
   const [sideW, setSideW] = useState(() => Number(localStorage.getItem('ramulus.sidebarw')) || 230)
   const [searchTick, setSearchTick] = useState(0)
   const [running, setRunning] = useState<string>()
@@ -102,14 +112,15 @@ export function Shell() {
       if (scheme) localStorage.setItem('ramulus.scheme', JSON.stringify(scheme))
       else localStorage.removeItem('ramulus.scheme')
     } catch {}
-    if (prefsReady.current) helper?.setPrefs({ theme, scheme: scheme ?? null }).catch(() => {})
-  }, [theme, scheme])
+    if (prefsReady.current) helper?.setPrefs({ theme, scheme: scheme ?? null, mergeMethod }).catch(() => {})
+  }, [theme, scheme, mergeMethod])
   useEffect(() => {
     helper
       ?.prefs()
       .then((prefs) => {
         if (prefs.theme === 'dark' || prefs.theme === 'light') setTheme(prefs.theme)
         setScheme(isScheme(prefs.scheme) ? prefs.scheme : undefined)
+        if (isMergeMethod(prefs.mergeMethod)) setMergeMethod(prefs.mergeMethod)
       })
       .catch(() => {})
       .finally(() => (prefsReady.current = true))
@@ -217,6 +228,7 @@ export function Shell() {
     tabsRef.current = rest
     setTabs(rest)
     setDirty((d) => (d.has(id) ? new Set([...d].filter((x) => x !== id)) : d))
+    setSummaries(({ [id]: _, ...rest }) => rest)
     apis.current.delete(id)
     setActive((a) => (a === id ? rest[Math.min(i, rest.length - 1)]?.id : a))
   }
@@ -330,7 +342,7 @@ export function Shell() {
     <div class={`shell ${docked ? 'with-sidebar' : ''}`} style={{ '--sb-w': `${sideW}px` }}>
       {!docked && <div class="sb-edge" onMouseEnter={reveal} />}
       <Sidebar
-        tabs={tabs.map((t) => ({ id: t.id, name: t.name, title: t.title, pinned: t.pinned, dirty: dirty.has(t.id) }))}
+        tabs={tabs.map((t) => ({ id: t.id, name: t.name, title: t.title, pinned: t.pinned, dirty: dirty.has(t.id), summary: summaries[t.id] }))}
         active={active}
         recent={recentList}
         docked={docked}
@@ -345,12 +357,17 @@ export function Shell() {
         onClose={close}
         onPin={togglePin}
         onOpen={() => setPicker(true)}
-        onPullAll={() => runAll('pull')}
-        onFetchAll={() => runAll('fetch')}
-        onDock={(d) => {
-          setDocked(d)
-          setShown(false)
-        }}
+        onDock={toggleDock}
+        onMore={(r) =>
+          setMenu({
+            x: r.left,
+            y: r.bottom + 4,
+            items: [
+              { label: 'Fetch every repository', onClick: () => void runAll('fetch') },
+              { label: 'Pull every repository (fast-forward only)', onClick: () => void runAll('pull') },
+            ],
+          })
+        }
         onEnter={reveal}
         onLeave={() => !docked && conceal()}
       />
@@ -370,11 +387,11 @@ export function Shell() {
               onApi={(api) => apis.current.set(t.id, api)}
               onSearchRepos={searchRepos}
               onAll={runAll}
+              onSummary={(s) => setSummaries((m) => (sameSummary(m[t.id], s) ? m : { ...m, [t.id]: s }))}
+              mergeMethod={mergeMethod}
+              onMergeMethod={setMergeMethod}
               sidebar={docked}
-              onToggleSidebar={() => {
-                setDocked(!docked)
-                setShown(false)
-              }}
+              onToggleSidebar={toggleDock}
             />
           </div>
         ))}
@@ -387,6 +404,7 @@ export function Shell() {
               </div>
               <div />
               <div class="tb-side tb-end">
+                <SidebarToggle on={docked} onToggle={toggleDock} />
                 <BrandLinks />
               </div>
             </div>
@@ -449,6 +467,7 @@ export function Shell() {
           </div>
         )}
       </div>
+      {menu && <Menu menu={menu} onClose={() => setMenu(undefined)} />}
       {picker && <Palette commands={choices} extra={typedPath} placeholder={helper ? 'Type a path, or pick a recent repository' : 'Pick a repository'} onClose={() => setPicker(false)} />}
       {dialog && (
         <Dialogs

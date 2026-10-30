@@ -1,7 +1,8 @@
 import type { JSX } from 'preact'
 import { useState } from 'preact/hooks'
+import type { PullRequest } from '../git/backend'
 import type { RepoData } from '../git/repo'
-import { Icon, laneColor } from './bits'
+import { Icon, PR_ICON, laneColor, webUrl } from './bits'
 import { FileExplorer } from './FileExplorer'
 
 export interface LeftProps {
@@ -21,6 +22,9 @@ export interface LeftProps {
   stamp: unknown
   selectedFile?: string
   onOpenFile: (path: string) => void
+  prs: Map<string, PullRequest>
+  onMergePr?: (pr: PullRequest) => void
+  onOpenPr?: (pr: PullRequest) => void
   mode: LeftMode
   onMode: (mode: LeftMode) => void
   detail: JSX.Element
@@ -33,6 +37,39 @@ const MODES: { id: LeftMode; label: string; icon: string }[] = [
   { id: 'commit', label: 'Changes', icon: 'source-control' },
   { id: 'files', label: 'Files', icon: 'files' },
 ]
+
+function PrLink({ pr, onMerge, onOpen }: { pr?: PullRequest; onMerge?: (pr: PullRequest) => void; onOpen?: (pr: PullRequest) => void }) {
+  if (!pr) return null
+  const stop = (e: Event) => e.stopPropagation()
+  return (
+    <>
+      <a class={`pr ${pr.state.toLowerCase()}`} href={webUrl(pr.url)} target="_blank" rel="noreferrer" title={`#${pr.number} ${pr.title} (${pr.state.toLowerCase()})`}
+        onClick={(e) => {
+          e.stopPropagation()
+          if (!onOpen || e.metaKey || e.ctrlKey || e.shiftKey) return
+          e.preventDefault()
+          onOpen(pr)
+        }}
+        onDblClick={stop}
+      >
+        <Icon name={PR_ICON[pr.state]} />#{pr.number}
+      </a>
+      {onMerge && pr.state === 'OPEN' && (
+        <button
+          class="pr-merge"
+          title={`Merge #${pr.number} on GitHub`}
+          onClick={(e) => {
+            e.stopPropagation()
+            onMerge(pr)
+          }}
+          onDblClick={stop}
+        >
+          Merge
+        </button>
+      )}
+    </>
+  )
+}
 
 function Section({ title, count, open, onToggle }: { title: string; count: number; open: boolean; onToggle: () => void }) {
   return (
@@ -80,7 +117,7 @@ export function LeftPanel(p: LeftProps) {
       {MODES.map((m) => (
         <button key={m.id} role="tab" aria-selected={p.mode === m.id} class={p.mode === m.id ? 'on' : ''} onClick={() => p.onMode(m.id)}>
           <Icon name={m.icon} />
-          {m.label}
+          <span class="label">{m.label}</span>
         </button>
       ))}
     </div>
@@ -116,6 +153,7 @@ export function LeftPanel(p: LeftProps) {
             >
               {dot(b.oid)}
               <span class="name">{b.name}</span>
+              <PrLink pr={p.prs.get(b.name)} onMerge={p.onMergePr} onOpen={p.onOpenPr} />
               {soloBtn(b.name)}
               {!!(b.ahead || b.behind) && (
                 <span class="meta">
@@ -124,7 +162,11 @@ export function LeftPanel(p: LeftProps) {
                 </span>
               )}
               {b.gone && <span class="meta">gone</span>}
-              {b.isHead && <span class="meta here">checked out</span>}
+              {b.isHead && (
+                <span class="meta here" title="Checked out">
+                  <Icon name="check" />
+                </span>
+              )}
             </div>
           ))}
           {local.length === 0 && <div class="empty">{q ? 'No matching branches' : 'No branches yet'}</div>}
@@ -150,6 +192,7 @@ export function LeftPanel(p: LeftProps) {
                 >
                   {dot(b.oid)}
                   <span class="name">{b.name.slice(remote.length + 1)}</span>
+                  <PrLink pr={p.prs.get(b.name.slice(remote.length + 1))} onMerge={p.onMergePr} onOpen={p.onOpenPr} />
                   {soloBtn(b.name)}
                 </div>
               ))}

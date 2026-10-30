@@ -41,11 +41,46 @@ export interface FileVersions {
 
 export type TermKind = 'agent' | 'shell'
 
+export type MergeMethod = 'merge' | 'squash' | 'rebase'
+
+export type PrChange = 'ready' | 'draft' | 'close' | 'reopen'
+
+export type CheckState = 'pass' | 'fail' | 'running' | 'cancelled' | 'skipped'
+
+export interface PullRequestDetail {
+  number: number
+  title: string
+  body: string
+  url: string
+  state: PullRequest['state']
+  author: string
+  head: string
+  base: string
+  createdAt: string
+  reviewDecision: string
+  mergeState: string
+  checks: { name: string; workflow: string; state: CheckState; url: string }[]
+  reviews: { author: string; state: string; body: string; at: string }[]
+  comments: { author: string; body: string; at: string }[]
+}
+
+export interface PullRequest {
+  number: number
+  title: string
+  url: string
+  branch: string
+  state: 'OPEN' | 'DRAFT' | 'MERGED' | 'CLOSED'
+}
+
 export interface Backend {
   native: boolean
   load(limit: number): Promise<RepoData>
   status(): Promise<WorkStatus>
   files(): Promise<string[]>
+  prs?(): Promise<PullRequest[]>
+  prMerge?(number: number, method: MergeMethod): Promise<void>
+  prView?(number: number): Promise<PullRequestDetail>
+  prChange?(number: number, action: PrChange): Promise<void>
   commitFiles(oid: string): Promise<FileChange[]>
   fileVersions(area: DiffArea, path: string): Promise<FileVersions>
   writeIndex(path: string, content: string, expected?: string): Promise<void>

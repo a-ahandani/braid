@@ -1,6 +1,6 @@
 import type { ComponentChildren } from 'preact'
 import { useEffect, useRef, useState } from 'preact/hooks'
-import type { ResetMode } from '../git/backend'
+import type { MergeMethod, ResetMode } from '../git/backend'
 import type { NetSettings } from '../git/repo'
 import { loadScheme, type Scheme } from '../git/scheme'
 import { Icon } from './bits'
@@ -17,6 +17,13 @@ export type Dialog =
   | { kind: 'push-rejected'; branch: string; ahead: number; behind: number; rebase: () => void; merge: () => void; force: () => void }
   | { kind: 'repos'; folder: string; inside?: boolean; repos: { dir: string; name: string }[]; open: (dirs: string[]) => void }
   | { kind: 'scheme' }
+  | { kind: 'pr-merge'; number: number; title: string; last: MergeMethod; merge: (method: MergeMethod) => void }
+
+const MERGE_OPTIONS: [MergeMethod, string, string][] = [
+  ['merge', 'Create a merge commit', 'Keeps every commit and adds a merge commit on top.'],
+  ['squash', 'Squash and merge', 'Combines all commits into one.'],
+  ['rebase', 'Rebase and merge', 'Replays each commit on the base branch, no merge commit.'],
+]
 
 export interface DialogProps {
   dialog: Dialog
@@ -160,6 +167,23 @@ export function Dialogs(p: DialogProps) {
           </div>
         </Frame>
       )
+    case 'pr-merge': {
+      const ordered = [...MERGE_OPTIONS.filter((o) => o[0] === d.last), ...MERGE_OPTIONS.filter((o) => o[0] !== d.last)]
+      return (
+        <Frame title={`Merge #${d.number} on GitHub`} onClose={p.onClose}>
+          <div>{d.title}</div>
+          {ordered.map(([method, label, hint], i) => (
+            <button key={method} class={`choice ${i === 0 ? 'primary' : ''}`} onClick={() => (d.merge(method), p.onClose())}>
+              <b>{label}</b>
+              <span>{hint}</span>
+            </button>
+          ))}
+          <div class="buttons">
+            <button onClick={p.onClose}>Cancel</button>
+          </div>
+        </Frame>
+      )
+    }
     case 'confirm':
       return (
         <Frame title="Please confirm" onClose={p.onClose}>

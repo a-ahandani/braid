@@ -310,11 +310,16 @@ select {
 }
 
 .tb-actions .tool {
-  width: 34px;
+  min-width: 34px;
   height: 28px;
-  padding: 0;
+  padding: 0 8px;
+  gap: 5px;
   border-radius: 5px;
   background: transparent;
+}
+
+.tb-actions .tl {
+  font-size: 12px;
 }
 
 .tb-actions .tool .codicon {
@@ -334,13 +339,25 @@ select {
   border-radius: 5px 0 0 5px;
 }
 
-.tb-actions .tool.pull-mode {
-  width: 16px;
+.tb-actions .split .tool:first-child:not(:last-child) {
+  padding-right: 3px;
+}
+
+.tb-actions .tool.tb-more {
+  min-width: 0;
+  width: 18px;
+  padding: 0;
   border-radius: 0 5px 5px 0;
 }
 
-.tb-actions .tool.pull-mode .codicon {
+.tb-actions .tool.tb-more .codicon {
   font-size: 12px;
+}
+
+@media (max-width: 1280px) {
+  .tb-actions .tl {
+    display: none;
+  }
 }
 
 .toolbar .sep {
@@ -464,6 +481,13 @@ select {
 .splitter:hover {
   background: var(--focus);
   transition: background 0.1s 0.3s;
+}
+
+.shell > .splitter {
+  position: relative;
+  z-index: 3;
+  flex: none;
+  width: 5px;
 }
 
 .left {
@@ -617,7 +641,10 @@ select {
 }
 
 .left-modes button {
-  flex: 1;
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 0 4px;
+  gap: 4px;
   height: 24px;
   background: transparent;
   color: var(--fg-2);
@@ -626,6 +653,48 @@ select {
 .left-modes button.on {
   background: var(--toolbar-hover);
   color: var(--fg);
+}
+
+.item .pr {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  flex: none;
+  margin-left: 6px;
+  font-size: 11px;
+  color: var(--git-added);
+  text-decoration: none;
+}
+
+.item .pr:hover {
+  text-decoration: underline;
+}
+
+.item .pr.draft,
+.item .pr.merged {
+  color: var(--fg-2);
+}
+
+.item .pr.closed {
+  color: var(--git-deleted);
+}
+
+.item .pr-merge {
+  display: none;
+  flex: none;
+  height: 18px;
+  margin-left: 6px;
+  padding: 0 6px;
+  border: 1px solid currentColor;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--git-added);
+  font-size: 11px;
+}
+
+.item:hover .pr-merge {
+  display: inline-flex;
+  align-items: center;
 }
 
 .item .solo {
@@ -1120,6 +1189,22 @@ a {
 
 .commit-box .actions button.primary {
   flex: 1;
+  min-width: 0;
+}
+
+.commit-box .actions button.primary span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.commit-box .actions label {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
 }
 
 .warn {
@@ -1252,6 +1337,11 @@ a {
 .dialog > button.choice span {
   color: var(--fg-2);
   font-size: 12px;
+}
+
+.dialog > button.choice.primary span {
+  color: inherit;
+  opacity: 0.85;
 }
 
 .dialog > button.choice.danger b {
@@ -1703,18 +1793,25 @@ body.dragging * {
 }
 
 .diff-tabs .tab .name {
+  flex: 0 1 auto;
+  min-width: 0;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
 .diff-tabs .tab .desc {
+  flex: 1 1 0;
+  min-width: 0;
   color: var(--fg-2);
   font-size: 12px;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .diff-tabs .tab .close {
+  flex: none;
   margin-left: 4px;
   visibility: hidden;
 }
@@ -1841,7 +1938,10 @@ body.dragging * {
 }
 
 .sidebar.docked {
+  position: relative;
+  z-index: 2;
   flex: none;
+  box-shadow: 4px 0 16px var(--shadow);
 }
 
 .sidebar.floating {
@@ -1963,8 +2063,12 @@ body.dragging * {
 }
 
 .sb-item.active {
-  background: var(--selected);
-  color: var(--selected-fg);
+  background: var(--hover);
+  box-shadow: inset 2px 0 0 var(--focus);
+}
+
+.sb-item.active .name {
+  font-weight: 600;
 }
 
 .sb-item.active.cursor,
@@ -1991,10 +2095,6 @@ body.dragging * {
   outline: none;
 }
 
-.sb-main > .codicon {
-  font-size: 16px;
-}
-
 .sb-item .text {
   flex: 1;
   min-width: 0;
@@ -2011,13 +2111,51 @@ body.dragging * {
 }
 
 .sb-item .where {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  min-height: 14px;
   font-size: 11px;
   color: var(--fg-2);
 }
 
-.sb-item.active .where {
-  color: inherit;
-  opacity: 0.75;
+.sb-item .where .codicon {
+  flex: none;
+  font-size: 11px;
+}
+
+.sb-state {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--fg-2);
+}
+
+.sb-state .changes {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  color: var(--git-modified);
+}
+
+.sb-state .changes::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.sb-state .codicon {
+  font-size: 12px;
+  animation: sb-spin 1.2s linear infinite;
+}
+
+.sb-item:hover .sb-state,
+.sb-item:focus-within .sb-state {
+  display: none;
 }
 
 .sb-item mark {
@@ -2028,11 +2166,13 @@ body.dragging * {
 
 .sb-item .dot {
   display: none;
+  margin-left: 4px;
   color: var(--fg-2);
+  vertical-align: middle;
 }
 
 .sb-item .dot .codicon {
-  font-size: 10px;
+  font-size: 8px;
 }
 
 .sb-item.dirty .dot {
@@ -2046,10 +2186,6 @@ body.dragging * {
 .sb-item:hover .acts,
 .sb-item:focus-within .acts {
   display: flex;
-}
-
-.sb-item:hover .dot {
-  display: none;
 }
 
 .sb-item .acts button {
@@ -2270,4 +2406,333 @@ button.spin .codicon {
 
 .statusbar button.on {
   background: var(--toolbar-hover);
+}
+
+.pr-view {
+  height: 100%;
+  overflow-y: auto;
+  padding: 22px 28px 48px;
+  background: var(--bg);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.pr-inner {
+  max-width: 860px;
+  margin: 0 auto;
+}
+
+.pr-view h1 {
+  margin: 0 0 10px;
+  font-size: 22px;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.pr-view h1 .num,
+.pr-view .dim {
+  color: var(--fg-2);
+  font-weight: 400;
+}
+
+.pr-view code {
+  font-family: var(--mono);
+  font-size: 12px;
+}
+
+.pr-meta,
+.pr-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+
+.pr-actions {
+  margin-top: 16px;
+}
+
+.pr-actions button {
+  height: 28px;
+  padding: 0 14px;
+  gap: 6px;
+}
+
+.pr-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 10px;
+  border-radius: 12px;
+  color: #fff;
+  background: #6e7681;
+  font-weight: 600;
+}
+
+.pr-state.open {
+  background: #238636;
+}
+
+.pr-state.merged {
+  background: #8250df;
+}
+
+.pr-state.closed {
+  background: #da3633;
+}
+
+.pr-open {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+  color: var(--fg-2);
+  text-decoration: none;
+}
+
+.pr-open:hover {
+  color: var(--fg);
+}
+
+.pr-checks,
+.pr-card {
+  margin-top: 18px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.pr-checks-head,
+.pr-card-head {
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--line);
+  background: var(--side);
+}
+
+.pr-checks-head {
+  font-weight: 600;
+}
+
+.pr-view .check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 14px;
+  color: var(--fg);
+  text-decoration: none;
+}
+
+.pr-view .check + .check {
+  border-top: 1px solid var(--line);
+}
+
+.pr-view .check:hover {
+  background: var(--hover);
+}
+
+.pr-view .check .name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pr-view .check.pass .codicon {
+  color: var(--green);
+}
+
+.pr-view .check.fail .codicon {
+  color: var(--red);
+}
+
+.pr-view .check.running .codicon {
+  color: var(--yellow);
+}
+
+.pr-card .md {
+  padding: 14px 16px;
+  overflow-wrap: anywhere;
+  font-size: 14px;
+}
+
+.pr-view .md > :first-child {
+  margin-top: 0;
+}
+
+.pr-view .md > :last-child {
+  margin-bottom: 0;
+}
+
+.pr-view .md p,
+.pr-view .md ul,
+.pr-view .md ol {
+  margin: 0 0 12px;
+}
+
+.pr-view .md li + li {
+  margin-top: 4px;
+}
+
+.pr-view .md h1,
+.pr-view .md h2,
+.pr-view .md h3,
+.pr-view .md h4 {
+  margin: 20px 0 8px;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.pr-view .md h1,
+.pr-view .md h2 {
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--line);
+  font-size: 17px;
+}
+
+.pr-view .md :not(pre) > code {
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--side);
+}
+
+.pr-view .md pre {
+  overflow-x: auto;
+  padding: 10px 12px;
+  border-radius: 6px;
+  background: var(--side);
+}
+
+.pr-view .md blockquote {
+  margin: 0 0 12px;
+  padding-left: 12px;
+  border-left: 3px solid var(--line);
+  color: var(--fg-2);
+}
+
+.pr-view .md a {
+  color: var(--link);
+}
+
+.left-modes .label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pr-status {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 12px;
+}
+
+.pr-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 8px;
+  border: 1px solid currentColor;
+  border-radius: 10px;
+  font-size: 12px;
+  color: var(--fg-2);
+}
+
+.pr-chip.pass {
+  color: var(--green);
+}
+
+.pr-chip.fail {
+  color: var(--red);
+}
+
+.pr-chip.warn,
+.pr-chip.running {
+  color: var(--yellow);
+}
+
+.pr-actions button:disabled {
+  opacity: 0.5;
+}
+
+.pr-mini {
+  margin: 8px 8px 4px;
+  padding: 8px 10px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--bg);
+}
+
+.pr-mini-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  height: auto;
+  padding: 0;
+  background: transparent;
+  color: var(--fg);
+  text-align: left;
+}
+
+.pr-mini-title:hover:not(:disabled) {
+  background: transparent;
+  text-decoration: underline;
+}
+
+.pr-mini-title > .codicon:first-child {
+  color: var(--green);
+}
+
+.pr-mini-title.draft > .codicon:first-child,
+.pr-mini-title.merged > .codicon:first-child {
+  color: var(--fg-2);
+}
+
+.pr-mini-title.closed > .codicon:first-child {
+  color: var(--red);
+}
+
+.pr-mini-title .num {
+  color: var(--fg-2);
+}
+
+.pr-mini-title .name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+.pr-mini .pr-status {
+  gap: 2px 10px;
+  margin-top: 6px;
+}
+
+.pr-mini .pr-chip {
+  padding: 0;
+  border: 0;
+}
+
+.pr-mini .pr-actions {
+  margin-top: 10px;
+  gap: 6px;
+}
+
+.pr-mini .pr-actions button {
+  height: 24px;
+  padding: 0 8px;
+}
+
+.pr-mini .pr-actions button:not(.primary) .codicon {
+  display: none;
+}
+
+.pr-mini-note {
+  margin-top: 6px;
+  color: var(--fg-2);
+  font-size: 12px;
 }

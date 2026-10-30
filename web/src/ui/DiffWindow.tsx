@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'preact/hooks'
-import type { Backend, FileVersions } from '../git/backend'
+import type { Backend, FileVersions, PrChange, PullRequest } from '../git/backend'
 import { mixedEol } from '../git/chunk'
-import { Icon, short } from './bits'
+import { Icon, PR_ICON, short } from './bits'
+import { PrView } from './PrView'
 import type { FileSel } from './DetailPanel'
 import { DiffEditor, FileEditor, type ChunkAction, type DiffEditorHandle, type DiffMode } from './DiffEditor'
 
@@ -16,6 +17,7 @@ export interface DiffTab {
   sel: FileSel
   dirty: boolean
   file?: boolean
+  pr?: PullRequest
 }
 
 interface Geo {
@@ -163,6 +165,9 @@ export function DiffWindow(p: {
   onDirty: (key: string, dirty: boolean) => void
   onSave: (sel: FileSel, text: string, base: string, done: () => void) => void
   onOpen?: (sel: FileSel) => void
+  onMergePr?: (pr: PullRequest) => void
+  onChangePr?: (pr: PullRequest, action: PrChange) => void
+  busy: boolean
 }) {
   const [geo, setGeo] = useState<Geo>(initialGeo)
   const [max, setMax] = useState(false)
@@ -253,12 +258,12 @@ export function DiffWindow(p: {
       <div class="diff-tabs" onPointerDown={moveFrom} onDblClick={(e) => !(e.target as Element).closest('button, .tab') && setMax(!max)}>
         <div class="tab-strip" ref={strip}>
           {p.tabs.map((t) => {
-            const name = t.sel.path.slice(t.sel.path.lastIndexOf('/') + 1)
+            const name = t.pr ? `#${t.pr.number}` : t.sel.path.slice(t.sel.path.lastIndexOf('/') + 1)
             return (
               <div
                 key={t.key}
                 class={`tab ${t.key === current.key ? 'active' : ''} ${t.dirty ? 'dirty' : ''}`}
-                title={t.file ? t.sel.path : `${t.sel.path} (${describe(t.sel)})`}
+                title={t.pr ? t.pr.title : t.file ? t.sel.path : `${t.sel.path} (${describe(t.sel)})`}
                 role="tab"
                 tabIndex={0}
                 aria-selected={t.key === current.key}
@@ -274,9 +279,9 @@ export function DiffWindow(p: {
                   p.onCloseTab(t.key)
                 }}
               >
-                <Icon name={t.file ? 'file' : 'diff'} />
+                <Icon name={t.pr ? PR_ICON[t.pr.state] : t.file ? 'file' : 'diff'} />
                 <span class="name">{name}</span>
-                {!t.file && <span class="desc">({describe(t.sel)})</span>}
+                {t.pr ? <span class="desc">{t.pr.title}</span> : !t.file && <span class="desc">({describe(t.sel)})</span>}
                 <button
                   class="icon close"
                   title={t.dirty ? 'Unsaved edits. Close' : 'Close'}
@@ -302,12 +307,12 @@ export function DiffWindow(p: {
               <Icon name="save" />
             </button>
           )}
-          {p.onOpen && current.sel.area.kind !== 'commit' && (
+          {p.onOpen && current.sel.area.kind !== 'commit' && !current.pr && (
             <button class="icon" title="Open File" onClick={() => p.onOpen!(current.sel)}>
               <Icon name="go-to-file" />
             </button>
           )}
-          {!current.file && (
+          {!current.file && !current.pr && (
             <>
               <button class="icon" title="Previous Change" onClick={() => h()?.prev()}>
                 <Icon name="arrow-up" />
@@ -323,9 +328,11 @@ export function DiffWindow(p: {
               </button>
             </>
           )}
-          <button class={`icon ${p.options.wrap ? 'on' : ''}`} title="Toggle Word Wrap" onClick={() => toggle('wrap')}>
-            <Icon name="word-wrap" />
-          </button>
+          {!current.pr && (
+            <button class={`icon ${p.options.wrap ? 'on' : ''}`} title="Toggle Word Wrap" onClick={() => toggle('wrap')}>
+              <Icon name="word-wrap" />
+            </button>
+          )}
           <span class="sep" />
           <button class="icon" title={max ? 'Restore' : 'Maximize'} onClick={() => setMax(!max)}>
             <Icon name={max ? 'screen-normal' : 'screen-full'} />
@@ -335,16 +342,23 @@ export function DiffWindow(p: {
           </button>
         </div>
       </div>
-      <div class="breadcrumbs">
-        {parts.map((s, i) => (
-          <span key={i} class="crumb">
-            {i > 0 && <Icon name="chevron-right" />}
-            {i === parts.length - 1 && <Icon name="file" />}
-            {s}
-          </span>
-        ))}
-      </div>
-      {p.tabs.map((t) => (
+      {!current.pr && (
+        <div class="breadcrumbs">
+          {parts.map((s, i) => (
+            <span key={i} class="crumb">
+              {i > 0 && <Icon name="chevron-right" />}
+              {i === parts.length - 1 && <Icon name="file" />}
+              {s}
+            </span>
+          ))}
+        </div>
+      )}
+      {p.tabs.map((t) =>
+        t.pr ? (
+          <div key={t.key} class="diff-pane" hidden={t.key !== current.key}>
+            <PrView be={p.be} pr={t.pr} active={t.key === current.key} stamp={p.stamp} busy={p.busy} onMerge={p.onMergePr} onChange={p.onChangePr} />
+          </div>
+        ) : (
         <DiffPane
           key={t.key}
           tab={t}
@@ -359,7 +373,8 @@ export function DiffWindow(p: {
           handle={(x) => handles.current.set(t.key, x)}
           onGone={() => handles.current.delete(t.key)}
         />
-      ))}
+        ),
+      )}
       {!max && EDGES.map((edge) => <div key={edge} class={`edge ${edge}`} onPointerDown={resizeFrom(edge)} />)}
     </div>
   )

@@ -9,6 +9,7 @@ export interface FileSel {
 }
 
 export interface DetailProps {
+  top?: JSX.Element
   data: RepoData
   commit?: Commit
   commitColor: string
@@ -166,6 +167,7 @@ export function DetailPanel(p: DetailProps) {
     const c = p.commit
     return (
       <div class="detail">
+        {p.top}
         <div class="detail-head">
           <h2>{c.summary}</h2>
           <div class="who">
@@ -217,6 +219,7 @@ export function DetailPanel(p: DetailProps) {
   const autostash = !state && p.onDropAutostash && p.data.stashes.some((x) => /autostash$/.test(x.message))
   return (
     <div class="detail">
+      {p.top}
       {autostash && (
         <div class="banner">
           <span>{conflicts > 0 ? `Your uncommitted changes conflicted when they were put back. Resolve and stage ${conflicts === 1 ? 'the file' : `the ${conflicts} files`} marked !, then press Done.` : 'A saved copy of your uncommitted changes is still in the stash. Press Done once your files look right.'}</span>
@@ -269,7 +272,7 @@ export function DetailPanel(p: DetailProps) {
           <span class="right" />
           <button class="primary" disabled={!canCommit} onClick={p.onCommit} title="⌘⏎">
             <Icon name="check" />
-            {label}
+            <span>{label}</span>
           </button>
         </div>
       </div>

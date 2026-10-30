@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'preact/hooks'
 import { DEFAULT_PROMPTS, branchName, fillPrompt, splitMessage } from '../git/ai'
-import type { AiInfo, AiSettings, Backend, PullMode, PushResult, RebaseResult, RemoteSwitch, TermKind } from '../git/backend'
+import type { AiInfo, AiSettings, Backend, MergeMethod, PrChange, PullMode, PullRequest, PushResult, RebaseResult, RemoteSwitch, TermKind } from '../git/backend'
 import { layout, type RowLayout } from '../git/graph'
 import { PAGE, type Commit, type DiffArea, type FileChange, type NetSettings, type RepoData } from '../git/repo'
 import type { Scheme } from '../git/scheme'
 import { AgentTerminal, AiConsent, AiSettingsDialog } from './Ai'
-import { BrandLinks, BrandMark, Icon, laneColor, short } from './bits'
+import { BrandLinks, BrandMark, Icon, SidebarToggle, laneColor, prsByBranch, short } from './bits'
 import { DetailPanel, type FileSel } from './DetailPanel'
+import { PrCard } from './PrView'
 import { DiffWindow, tabKey, type DiffOptions, type DiffTab } from './DiffWindow'
 import type { ChunkAction } from './DiffEditor'
 import { Dialogs, type Dialog } from './Dialogs'
@@ -14,6 +15,7 @@ import { GraphView, type DropInfo, type PillData } from './GraphView'
 import { LeftPanel, type LeftMode } from './LeftPanel'
 import { Menu, type MenuItem, type MenuState } from './Menu'
 import { Palette, type Command } from './Palette'
+import type { RepoSummary } from './Sidebar'
 import { Shortcuts } from './Shortcuts'
 import { Splitter } from './Splitter'
 
@@ -32,6 +34,7 @@ type Sel = { kind: 'wip' } | { kind: 'commit'; oid: string }
 const WIP = '0000000000000000000000000000000000000000'
 const SETTINGS_KEY = 'ramulus.net'
 const PAGE_TAG = Date.now().toString(36)
+const CHANGE_LABEL: Record<PrChange, [string, string]> = { draft: ['Marking as draft', 'is a draft now'], ready: ['Marking ready for review', 'is ready for review'], close: ['Closing', 'is closed'], reopen: ['Reopening', 'is open again'] }
 const stored = (key: string) => (typeof localStorage === 'undefined' ? null : localStorage.getItem(key))
 
 function buildView(be: Backend, data: RepoData, limit: number): View {
@@ -80,7 +83,7 @@ export interface TabApi {
   fetch: () => Promise<void>
 }
 
-export function App(p: { be: Backend; active: boolean; theme: Theme; onTheme: (t: Theme) => void; scheme?: Scheme; onScheme: (s?: Scheme) => void; onOpenRepo: () => void; onDirty: (dirty: boolean) => void; onApi: (api: TabApi) => void; onSearchRepos: () => void; onAll: (kind: 'pull' | 'fetch') => void; sidebar: boolean; onToggleSidebar: () => void }) {
+export function App(p: { be: Backend; active: boolean; theme: Theme; onTheme: (t: Theme) => void; scheme?: Scheme; onScheme: (s?: Scheme) => void; onOpenRepo: () => void; onDirty: (dirty: boolean) => void; onApi: (api: TabApi) => void; onSearchRepos: () => void; onAll: (kind: 'pull' | 'fetch') => void; mergeMethod: MergeMethod; onMergeMethod: (m: MergeMethod) => void; onSummary: (s: RepoSummary) => void; sidebar: boolean; onToggleSidebar: () => void }) {
   const theme = p.theme
   const look = p.scheme ? `scheme:${p.scheme.id}` : theme
   const setTheme = (t: Theme) => {
@@ -126,6 +129,7 @@ export function App(p: { be: Backend; active: boolean; theme: Theme; onTheme: (t
   const [undo, setUndo] = useState<{ before: string; onto: string }>()
   const [showLeft, setShowLeft] = useState(true)
   const [leftMode, setLeftMode] = useState<LeftMode>('branches')
+  const [prs, setPrs] = useState<Map<string, PullRequest>>(new Map())
   const [leftW, setLeftW] = useState(() => Number(stored('ramulus.leftw')) || 380)
   const [scrollTo, setScrollTo] = useState<number>()
   const [updatedAt, setUpdatedAt] = useState<Date>()
@@ -155,8 +159,6 @@ export function App(p: { be: Backend; active: boolean; theme: Theme; onTheme: (t
   viewRef.current = view
   const busyRef = useRef(busy)
   busyRef.current = busy
-  const activeRef = useRef(p.active)
-  activeRef.current = p.active
 
   useEffect(() => {
     localStorage.setItem('ramulus.drawer', String(drawerH))
@@ -237,7 +239,7 @@ export function App(p: { be: Backend; active: boolean; theme: Theme; onTheme: (t
         busyRef.current = undefined
         setBusy(undefined)
       }
-      if (activeRef.current) await reload()
+      await reload()
     }
     p.onApi({
       pull: () =>
@@ -261,6 +263,36 @@ export function App(p: { be: Backend; active: boolean; theme: Theme; onTheme: (t
   useEffect(() => {
     if (p.active) reload()
   }, [p.active])
+
+  useEffect(() => {
+    if (!view) return
+    const cur = view.data.local.find((b) => b.isHead)
+    const s = view.data.status
+    p.onSummary({
+      branch: view.data.headBranch ?? (view.data.headOid ? 'detached' : ''),
+      changes: new Set([...s.staged, ...s.unstaged].map((f) => f.path)).size,
+      ahead: cur?.ahead ?? 0,
+      behind: cur?.behind ?? 0,
+      busy: !!busy,
+    })
+  }, [view, busy])
+
+  useEffect(() => {
+    const fresh = (t: DiffTab) => {
+      const now = t.pr && prs.get(t.pr.branch)
+      return now && now.number === t.pr!.number && now.state !== t.pr!.state ? now : undefined
+    }
+    setDiffTabs((ts) => (ts.some(fresh) ? ts.map((t) => ({ ...t, pr: fresh(t) ?? t.pr })) : ts))
+  }, [prs])
+
+  useEffect(() => {
+    if (!view || !p.be.prs) return
+    let live = true
+    p.be.prs().then((list) => live && setPrs(prsByBranch(list)), () => {})
+    return () => {
+      live = false
+    }
+  }, [view])
 
   const run = async (label: string, fn: () => Promise<unknown>, opts: { after?: (r: unknown) => void; statusOnly?: boolean } = {}) => {
     if (!view || busy) return
@@ -296,7 +328,7 @@ export function App(p: { be: Backend; active: boolean; theme: Theme; onTheme: (t
   useEffect(() => {
     if (!view) return
     const gone = (t: DiffTab) => {
-      if (t.dirty || t.file || t.sel.area.kind === 'commit') return false
+      if (t.dirty || t.file || t.pr || t.sel.area.kind === 'commit') return false
       const list = t.sel.area.kind === 'staged' ? view.data.status.staged : view.data.status.unstaged
       return !list.some((f) => f.path === t.sel.path)
     }
@@ -763,6 +795,11 @@ export function App(p: { be: Backend; active: boolean; theme: Theme; onTheme: (t
     setDiffTabs((ts) => (ts.some((t) => t.key === key) ? ts : [...ts, { key, sel: f, dirty: false }]))
     setActiveDiff(key)
   }
+  const openPr = (pr: PullRequest) => {
+    const key = `pr:${pr.number}`
+    setDiffTabs((ts) => (ts.some((t) => t.key === key) ? ts : [...ts, { key, sel: { area: { kind: 'unstaged' }, path: `#${pr.number}` }, dirty: false, pr }]))
+    setActiveDiff(key)
+  }
   const openWorkFile = (path: string) => {
     const key = `file:${path}`
     setDiffTabs((ts) => (ts.some((t) => t.key === key) ? ts : [...ts, { key, sel: { area: { kind: 'unstaged' }, path }, dirty: false, file: true }]))
@@ -937,10 +974,7 @@ export function App(p: { be: Backend; active: boolean; theme: Theme; onTheme: (t
       <div class="statusbar">
         {v && (
           <>
-            <span>
-              <Icon name="git-branch" />
-              {head ?? (v.data.headOid ? 'detached HEAD' : 'no commits')}
-            </span>
+            {!head && <span>{v.data.headOid ? 'Detached HEAD' : 'No commits yet'}</span>}
             {cur?.upstream ? (
               <span title={`Compared with ${cur.upstream}`}>
                 <Icon name="sync" />
@@ -967,7 +1001,12 @@ export function App(p: { be: Backend; active: boolean; theme: Theme; onTheme: (t
           </>
         )}
         <span class="spacer" />
-        {updatedAt && <span title="Last read of the repository">Updated {updatedAt.toLocaleTimeString()}</span>}
+        {updatedAt && (
+          <button onClick={() => reload()} title="Refresh now">
+            <Icon name="refresh" />
+            Updated {updatedAt.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}
+          </button>
+        )}
         {v && (
           <button onClick={() => openPalette(true)} title="Command palette (⌘⇧P)">
             <Icon name="list-selection" />
@@ -1002,7 +1041,42 @@ export function App(p: { be: Backend; active: boolean; theme: Theme; onTheme: (t
   const layoutOf = (i: number) => soloInfo?.layoutByIndex.get(i) ?? v.layout[i]
   const currentColor = current ? laneColor(layoutOf(v.indexOf.get(current.id)!).column) : 'var(--lane-0)'
   const wipCount = new Set([...v.data.status.staged, ...v.data.status.unstaged].map((f) => f.path)).size
+  const branchOf = (r: { name: string; kind: string }) => (r.kind === 'head' ? r.name : r.kind === 'remote' ? r.name.slice(r.name.indexOf('/') + 1) : '')
+  const shownPr =
+    sel?.kind === 'commit'
+      ? (v.data.refsByOid.get(sel.oid) ?? []).map((r) => prs.get(branchOf(r))).find(Boolean)
+      : v.data.headBranch
+        ? prs.get(v.data.headBranch)
+        : undefined
   const net = (label: string, fn: () => Promise<unknown>) => run(label, fn, { after: () => setToast(`${label} done`) })
+  const changePr = (pr: PullRequest, action: PrChange) =>
+    run(`${CHANGE_LABEL[action][0]} #${pr.number}`, async () => {
+      try {
+        await v.be.prChange!(pr.number, action)
+      } catch (e) {
+        return fail(`GitHub did not change #${pr.number}`, e)
+      }
+      setToast(`#${pr.number} ${CHANGE_LABEL[action][1]}`)
+    })
+  const mergePr = (pr: PullRequest) =>
+    setDialog({
+      kind: 'pr-merge',
+      number: pr.number,
+      title: pr.title,
+      last: p.mergeMethod,
+      merge: (method) => {
+        p.onMergeMethod(method)
+        return run(`Merging #${pr.number} on GitHub`, async () => {
+          try {
+            await v.be.prMerge!(pr.number, method)
+          } catch (e) {
+            return fail(`GitHub did not merge #${pr.number}`, e)
+          }
+          setToast(`Merged #${pr.number} on GitHub`)
+          await v.be.fetchAll()
+        })
+      },
+    })
 
   return (
     <div class={`app ${terms.length && drawerShown ? 'with-drawer' : ''} ${terms.length && drawerShown && drawerMax ? 'drawer-max' : ''}`}>
@@ -1024,12 +1098,13 @@ export function App(p: { be: Backend; active: boolean; theme: Theme; onTheme: (t
         </div>
         <div class="tb-actions" role="toolbar" aria-label="Repository actions">
           <span class="split">
-            <button class="tool" disabled={!!busy || !head} onClick={() => net('Pull', () => v.be.pull(pullMode, head!))} title={v.be.native ? `Pull (${PULL_MODES[pullMode]})` : 'Pull'} aria-label="Pull">
+            <button class="tool" disabled={!!busy || !head} onClick={() => net('Pull', () => v.be.pull(pullMode, head!))} title={v.be.native ? `Pull (${PULL_MODES[pullMode]})` : 'Pull'}>
               <Icon name="arrow-circle-down" />
+              <span class="tl">Pull</span>
             </button>
             {v.be.native && (
               <button
-                class="tool pull-mode"
+                class="tool tb-more"
                 disabled={!!busy || !head}
                 title="How pull integrates changes"
                 aria-label="Pull options"
@@ -1042,23 +1117,37 @@ export function App(p: { be: Backend; active: boolean; theme: Theme; onTheme: (t
               </button>
             )}
           </span>
-          <button class="tool" disabled={!!busy || !head} onClick={() => pushHead()} title="Push the checked-out branch" aria-label="Push">
+          <button class="tool" disabled={!!busy || !head} onClick={() => pushHead()} title="Push the checked-out branch">
             <Icon name="arrow-circle-up" />
+            <span class="tl">Push</span>
           </button>
-          <button class="tool" disabled={!!busy} onClick={() => net('Fetch', () => v.be.fetchAll())} title="Fetch every remote (⌘L)" aria-label="Fetch">
+          <button class="tool" disabled={!!busy} onClick={() => net('Fetch', () => v.be.fetchAll())} title="Fetch every remote (⌘L)">
             <Icon name="cloud-download" />
+            <span class="tl">Fetch</span>
           </button>
           <span class="sep" />
-          <button class="tool" disabled={!!busy || !v.data.headOid} onClick={() => setDialog({ kind: 'branch', at: v.data.headOid! })} title="New branch (⌘B)" aria-label="New branch">
+          <button class="tool" disabled={!!busy || !v.data.headOid} onClick={() => setDialog({ kind: 'branch', at: v.data.headOid! })} title="New branch (⌘B)">
             <Icon name="git-branch-create" />
+            <span class="tl">Branch</span>
           </button>
-          <span class="sep" />
-          <button class="tool" disabled={!!busy || wipCount === 0} onClick={() => setDialog({ kind: 'stash' })} title="Stash everything" aria-label="Stash">
-            <Icon name="git-stash" />
-          </button>
-          <button class="tool" disabled={!!busy || v.data.stashes.length === 0} onClick={() => run('Applying stash', () => v.be.stashApply(0, true))} title="Apply and drop the newest stash" aria-label="Pop stash">
-            <Icon name="git-stash-pop" />
-          </button>
+          <span class="split">
+            <button class="tool" disabled={!!busy || wipCount === 0} onClick={() => setDialog({ kind: 'stash' })} title="Stash everything">
+              <Icon name="git-stash" />
+              <span class="tl">Stash</span>
+            </button>
+            <button
+              class="tool tb-more"
+              disabled={!!busy || v.data.stashes.length === 0}
+              title="Put the newest stash back"
+              aria-label="Stash options"
+              onClick={(e) => {
+                const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
+                setMenu({ x: r.left - 34, y: r.bottom + 4, items: [{ label: 'Apply and drop the newest stash', onClick: () => run('Applying stash', () => v.be.stashApply(0, true)) }] })
+              }}
+            >
+              <Icon name="chevron-down" />
+            </button>
+          </span>
         </div>
         <div class="tb-side tb-end">
           <span class="search">
@@ -1066,9 +1155,7 @@ export function App(p: { be: Backend; active: boolean; theme: Theme; onTheme: (t
             <input ref={filterRef} placeholder="Search commits (⌘F)" value={filter} onInput={(e) => setFilter((e.target as HTMLInputElement).value)} />
           </span>
           {filter && <span class="busy">{order.length} results</span>}
-          <button class={`icon ${p.sidebar ? 'on' : ''}`} onClick={p.onToggleSidebar} title={p.sidebar ? 'Hide the repositories sidebar' : 'Show the repositories sidebar'} aria-pressed={p.sidebar}>
-            <Icon name="repo" />
-          </button>
+          <SidebarToggle on={p.sidebar} onToggle={p.onToggleSidebar} />
           <button class={`icon ${showLeft ? 'on' : ''}`} onClick={() => setShowLeft(!showLeft)} title="Toggle left panel (⌘J)">
             <Icon name={showLeft ? 'layout-sidebar-left' : 'layout-sidebar-left-off'} />
           </button>
@@ -1077,9 +1164,6 @@ export function App(p: { be: Backend; active: boolean; theme: Theme; onTheme: (t
               <Icon name="settings-gear" />
             </button>
           )}
-          <button class="icon" onClick={() => reload()} title="Refresh">
-            <Icon name="refresh" />
-          </button>
           <BrandLinks />
           <button class={`ai-btn ${drawerShown ? 'on' : ''}`} onClick={toggleAgent} title="Your AI agent and terminals (⌃`)" aria-pressed={drawerShown}>
             <Icon name="sparkle" />
@@ -1108,10 +1192,18 @@ export function App(p: { be: Backend; active: boolean; theme: Theme; onTheme: (t
           stamp={v}
           selectedFile={activeTab?.file ? activeTab.sel.path : undefined}
           onOpenFile={openWorkFile}
+          prs={prs}
+          onMergePr={v.be.prMerge ? mergePr : undefined}
+          onOpenPr={v.be.prView ? openPr : undefined}
           mode={leftMode}
           onMode={setLeftMode}
           detail={
             <DetailPanel
+              top={
+                shownPr && v.be.prView ? (
+                  <PrCard key={shownPr.number} be={v.be} pr={shownPr} active={p.active} stamp={v} busy={!!busy} onOpen={openPr} onMerge={v.be.prMerge ? mergePr : undefined} onChange={v.be.prChange ? changePr : undefined} />
+                ) : undefined
+              }
               data={v.data}
               commit={current}
               commitColor={currentColor}
@@ -1219,9 +1311,6 @@ export function App(p: { be: Backend; active: boolean; theme: Theme; onTheme: (t
             <button class="icon" title="Hide the panel (⌃`)" aria-label="Hide the panel" onClick={() => setDrawerShown(false)}>
               <Icon name="chevron-down" />
             </button>
-            <button class="icon" title="Close every tab" aria-label="Close every tab" onClick={closeAllTerms}>
-              <Icon name="trash" />
-            </button>
           </div>
           <AgentTerminal
             key={activeTerm.id}
@@ -1263,6 +1352,9 @@ export function App(p: { be: Backend; active: boolean; theme: Theme; onTheme: (t
           onDirty={setTabDirty}
           onSave={saveFile}
           onOpen={v.be.openPath ? (f) => v.be.openPath!(f.path).catch((err) => fail('Could not open the file', err)) : undefined}
+          onMergePr={v.be.prMerge ? mergePr : undefined}
+          onChangePr={v.be.prChange ? changePr : undefined}
+          busy={!!busy}
         />
       )}
       {dialog && (

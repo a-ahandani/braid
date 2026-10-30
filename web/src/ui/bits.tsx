@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'preact/hooks'
+import type { PullRequest } from '../git/backend'
 
 export const LANES = 10
 
@@ -31,6 +32,25 @@ export async function settleLimited<T>(tasks: (() => Promise<T>)[], limit: numbe
   }
   await Promise.all(Array.from({ length: Math.min(limit, tasks.length) }, worker))
   return results
+}
+
+export const webUrl = (url: string) => (/^https?:\/\//i.test(url) ? url : undefined)
+
+export const PR_ICON = { OPEN: 'git-pull-request', DRAFT: 'git-pull-request-draft', MERGED: 'git-merge', CLOSED: 'git-pull-request-closed' }
+
+export function prsByBranch(list: PullRequest[]): Map<string, PullRequest> {
+  const open = (pr?: PullRequest) => pr?.state === 'OPEN' || pr?.state === 'DRAFT'
+  const out = new Map<string, PullRequest>()
+  for (const pr of list) if (!out.has(pr.branch) || (open(pr) && !open(out.get(pr.branch)))) out.set(pr.branch, pr)
+  return out
+}
+
+export function SidebarToggle({ on, onToggle }: { on: boolean; onToggle: () => void }) {
+  return (
+    <button class={`icon ${on ? 'on' : ''}`} onClick={onToggle} title={on ? 'Hide the repositories sidebar' : 'Show the repositories sidebar'} aria-pressed={on}>
+      <Icon name="repo" />
+    </button>
+  )
 }
 
 export function BrandMark() {
@@ -76,22 +96,23 @@ export function fmtDate(t: number): string {
   })
 }
 
-export function ago(t: number): string {
+export function ago(t: number, compact = false): string {
   const s = Math.max(0, Math.floor(Date.now() / 1000) - t)
-  const units: [number, string][] = [
-    [365 * 86400, 'year'],
-    [30 * 86400, 'month'],
-    [7 * 86400, 'week'],
-    [86400, 'day'],
-    [3600, 'hour'],
+  const units: [number, string, string][] = [
+    [365 * 86400, 'year', 'y'],
+    [30 * 86400, 'month', 'mo'],
+    [7 * 86400, 'week', 'w'],
+    [86400, 'day', 'd'],
+    [3600, 'hour', 'h'],
+    [60, 'minute', 'm'],
   ]
-  for (const [len, name] of units) {
+  for (const [len, name, short] of units) {
     if (s >= len) {
       const n = Math.floor(s / len)
-      return `${n} ${name}${n === 1 ? '' : 's'} ago`
+      return compact ? `${n}${short}` : `${n} ${name}${n === 1 ? '' : 's'} ago`
     }
   }
-  return 'less than an hour ago'
+  return compact ? 'now' : 'just now'
 }
 
 const hashes = new Map<string, string>()
