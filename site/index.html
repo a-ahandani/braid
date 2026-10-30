@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Ramulus · Every branch, in one graph</title>
 <meta name="description" content="A local Git GUI that works with the AI agent you already use. Run npx ramulus in any repository. No account, no Ramulus server." />
-<meta name="theme-color" content="#121212" />
+<meta name="theme-color" content="#ffffff" />
 <link rel="icon" href="favicon.ico" sizes="48x48" />
 <link rel="icon" href="favicon.svg" type="image/svg+xml" />
 <link rel="apple-touch-icon" href="apple-touch-icon.png" />
@@ -16,6 +16,7 @@
 <meta property="og:image" content="https://a-ahandani.github.io/ramulus/og.png" />
 <meta property="og:url" content="https://a-ahandani.github.io/ramulus/" />
 <meta name="twitter:card" content="summary_large_image" />
+<link rel="preload" href="fonts/LibreClarendonNormal-68Regular.otf" as="font" type="font/otf" crossorigin />
 <link rel="stylesheet" href="style.css" />
 </head>
 <body>
@@ -24,22 +25,22 @@
   <nav aria-label="Sections">
     <a href="#features">Features</a>
     <a href="#install">Install</a>
-    <a class="gh" href="https://github.com/a-ahandani/ramulus">GitHub</a>
+    <a class="btn" href="https://github.com/a-ahandani/ramulus">GitHub</a>
   </nav>
 </header>
 
 <main>
   <section class="hero wrap">
     <div class="hero-text">
-      <img class="hero-mark" src="mark.svg" alt="The Ramulus mark, a stick insect" width="132" height="108" />
-      <h1>Every branch, in one graph.</h1>
+      <p class="badge"><span>Free</span> Open source, MIT</p>
+      <h1>Super visual Git.</h1>
       <p class="lede">A local Git GUI that works with the AI agent you already use. No account.</p>
       <div class="cta">
         <div class="cmd" role="group" aria-label="Install command">
           <code><span class="prompt">$</span> npx ramulus</code>
           <button type="button" class="copy" data-copy="npx ramulus" aria-label="Copy the command">Copy</button>
         </div>
-        <a class="text-link" href="https://github.com/a-ahandani/ramulus">GitHub</a>
+        <a class="btn" href="app/">Open in Chrome or Edge</a>
       </div>
       <p class="req">Needs Node 20+ and git.</p>
     </div>
@@ -58,34 +59,33 @@
     </div>
   </section>
 
-  <section id="local" class="wrap" aria-label="Yours, start to finish">
-    <div class="pillars">
-      <article><h2>Your local agent</h2><p>Claude Code, Codex, Gemini CLI or opencode, as you already have them. No API key.</p></article>
-      <article><h2>Full control</h2><p>Real git on your disk. Undo a rebase. Force push asks first.</p></article>
-      <article><h2>No account</h2><p>No sign-up, no login, nothing to pay for.</p></article>
-      <article><h2>All local</h2><p>Runs on your machine. No Ramulus server, no telemetry.</p></article>
+  <section id="features" class="wrap">
+    <h2>Features</h2>
+    <div class="grid">
+      <article><h3>Your agent on git</h3><p>Claude Code, Codex, Gemini CLI or opencode, with their own sign-in. It drafts commit messages and branch names, and resolves conflicts for you to review.</p></article>
+      <article><h3>Code changes</h3><p>Editor-grade diffs. Stage, unstage or discard one block, and edit in place.</p></article>
+      <article><h3>Multiple repos, full control</h3><p>Open a folder of repositories. Pull or fetch them all, merge pull requests, jump with <kbd>⌘⇧A</kbd>.</p></article>
     </div>
   </section>
 
-  <section id="features" class="wrap">
+  <section id="local" class="wrap">
+    <h2>Yours, start to finish</h2>
     <div class="grid">
-      <article><h3>Readable graph</h3><p>Lanes, stashes and ahead or behind at a glance.</p></article>
-      <article><h3>Real editor diffs</h3><p>Stage one block. Edit in place.</p></article>
-      <article><h3>All your repos</h3><p>Open a folder of them. Jump with ⌘⇧A.</p></article>
+      <article><h3>Your git, unchanged</h3><p>Runs the git you already use. SSH keys, hooks and LFS just work.</p></article>
+      <article><h3>No account</h3><p>No sign-up, no login, nothing to pay for.</p></article>
+      <article><h3>All local</h3><p>Runs on your machine. No Ramulus server, no telemetry.</p></article>
     </div>
   </section>
 
   <section id="install" class="wrap">
-    <ul class="ways">
-      <li>
-        <h3>Terminal</h3>
-        <div class="cmd"><code><span class="prompt">$</span> npx ramulus</code><button type="button" class="copy" data-copy="npx ramulus" aria-label="Copy the command">Copy</button></div>
-      </li>
-      <li>
-        <h3>Browser</h3>
-        <a class="text-link" href="app/">Open in Chrome or Edge</a>
-      </li>
-    </ul>
+    <h2>Install</h2>
+    <div class="cta">
+      <div class="cmd" role="group" aria-label="Install command">
+        <code><span class="prompt">$</span> npx ramulus</code>
+        <button type="button" class="copy" data-copy="npx ramulus" aria-label="Copy the command">Copy</button>
+      </div>
+      <a class="btn" href="app/">Open in Chrome or Edge</a>
+    </div>
   </section>
 </main>
 
