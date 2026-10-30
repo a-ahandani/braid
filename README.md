@@ -12,7 +12,7 @@ Run it inside any git repository, or pass a path: `npx ramulus ~/code/app`. Run 
 
 ![Ramulus in use: Claude Code adding a feature in the agent panel and the change reviewed as a diff, two change blocks staged and the commit message drafted by the agent, a branch dragged onto main to merge it, a remote branch switched to with a double-click, every repository pulled at once, and a color scheme taken from a link](docs/demo.gif)
 
-[Download the demo in full quality (MP4, 5.7 MB)](https://github.com/a-ahandani/ramulus/raw/main/docs/demo.mp4) · [Website](https://a-ahandani.github.io/ramulus/)
+[Download the demo in full quality (MP4, 5.6 MB)](https://github.com/a-ahandani/ramulus/raw/main/docs/demo.mp4) · [Website](https://a-ahandani.github.io/ramulus/)
 
 ## Why Ramulus
 
@@ -27,7 +27,7 @@ Ramulus is Latin for a small branch.
 
 ### History you can read
 
-![The branch graph of a repository with local and remote branches, two tags, a stash and uncommitted changes, with a commit and its changed file selected](docs/screenshots/overview.png)
+![The branch graph of a repository with local and remote branches, two tags, a stash and uncommitted changes, with a commit selected and its changed file listed](docs/screenshots/overview.png)
 
 - A lane graph with merge, stash and work-in-progress nodes, author avatars, and one label per branch with ahead and behind counts against its upstream.
 - Search commits by message, author, hash or ref. Solo one or two branches to see only their history.

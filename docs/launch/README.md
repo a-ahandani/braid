@@ -21,6 +21,6 @@ Files for Product Hunt and other launch posts.
 
 **First comment:**
 
-I vibe code most days, and the part I kept losing was the overview: which branch the agent is on, what it touched, what is safe to commit. Ramulus puts that on one screen. The agent you already use runs in a panel under the branch graph, with its own sign-in. Its edits show up as diffs you can stage block by block, it drafts the commit message, and you merge by dragging a branch onto another.
+Vibe coding needs a visual place to keep control of the flow: which branch the agent is on, what it touched, what is safe to commit. Ramulus puts that on one screen. The agent you already use runs in a panel under the branch graph, with its own sign-in. Its edits show up as diffs you can stage block by block, it drafts the commit message, and you merge by dragging a branch onto another.
 
 It runs on the git you already have, with your keys and hooks, on 127.0.0.1. One command, `npx ramulus`, no account. Feedback and issues are welcome on GitHub.
