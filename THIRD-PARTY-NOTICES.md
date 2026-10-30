@@ -10,3 +10,5 @@ The browser UI, served by the npm helper and the hosted page, bundles the compon
 - idb-keyval: Apache License 2.0, Jake Archibald
 - Preact: MIT License, Jason Miller and contributors
 - buffer: MIT License, Feross Aboukhadijeh
+
+The website bundles the Lexend and Libre Clarendon fonts under the SIL Open Font License 1.1; their license files are in `site/fonts`.
