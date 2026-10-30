@@ -94,9 +94,11 @@ export function AgentTerminal(p: {
   kind: TermKind
   agent?: string
   look: string
+  focus: boolean
   paste?: { id: number; text: string }
   restart: number
   onState: (s: { running: boolean; agent?: string }) => void
+  onFocused: () => void
   onPasted: () => void
 }) {
   const host = useRef<HTMLDivElement>(null)
@@ -122,9 +124,12 @@ export function AgentTerminal(p: {
       fit.fit()
       let pending = ''
       let sending = false
+      let session: Promise<unknown> = Promise.resolve()
       const flush = async () => {
         if (sending) return
         sending = true
+        // The helper drops input for a session it has not started yet, and the keyboard arrives first.
+        await session.catch(() => {})
         while (pending) {
           const data = pending
           pending = ''
@@ -141,7 +146,7 @@ export function AgentTerminal(p: {
       const start = async () => {
         detach()
         try {
-          const r = await latest.current.be.termStart!(latest.current.id, latest.current.kind, latest.current.agent, xt.cols, xt.rows)
+          const r = await (session = latest.current.be.termStart!(latest.current.id, latest.current.kind, latest.current.agent, xt.cols, xt.rows))
           latest.current.onState({ running: true, agent: r.agent })
           lastOutput = Date.now()
           detach = latest.current.be.termStream!(
@@ -186,6 +191,10 @@ export function AgentTerminal(p: {
             .catch(() => {})
         },
       }
+      if (latest.current.focus) {
+        xt.focus()
+        latest.current.onFocused()
+      }
       cleanup = () => {
         ro.disconnect()
         detach()
@@ -205,6 +214,12 @@ export function AgentTerminal(p: {
   useEffect(() => {
     if (p.restart) term.current?.restart()
   }, [p.restart])
+
+  useEffect(() => {
+    if (!p.focus || !term.current) return
+    term.current.focus()
+    p.onFocused()
+  }, [p.focus])
 
   useEffect(() => {
     const text = p.paste?.text

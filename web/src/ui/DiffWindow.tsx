@@ -20,45 +20,9 @@ export interface DiffTab {
   pr?: PullRequest
 }
 
-interface Geo {
-  x: number
-  y: number
-  w: number
-  h: number
-}
-
 type PaneHandle = DiffEditorHandle & { save: () => void }
 
-const GEO_KEY = 'ramulus.editorwindow'
-const MIN_W = 420
-const MIN_H = 240
-const EDGES = ['n', 's', 'e', 'w', 'ne', 'nw', 'se', 'sw']
-
 export const tabKey = (s: FileSel) => `${s.area.kind}:${s.area.kind === 'commit' ? s.area.oid : ''}:${s.path}`
-
-function fit(g: Geo): Geo {
-  const w = Math.min(Math.max(g.w, MIN_W), innerWidth - 16)
-  const h = Math.min(Math.max(g.h, MIN_H), innerHeight - 16)
-  return { w, h, x: Math.min(Math.max(g.x, 120 - w), innerWidth - 120), y: Math.min(Math.max(g.y, 0), innerHeight - 40) }
-}
-
-function savedGeo(): Geo | undefined {
-  try {
-    const saved = JSON.parse(localStorage.getItem(GEO_KEY) ?? 'null')
-    if (saved && [saved.x, saved.y, saved.w, saved.h].every(Number.isFinite)) return fit(saved)
-  } catch {
-    localStorage.removeItem(GEO_KEY)
-  }
-}
-
-const graphArea = () => document.querySelector('.tab-page:not([hidden]) .graph')
-
-function dockedGeo(): Geo | undefined {
-  const r = graphArea()?.getBoundingClientRect()
-  return r && r.width > 0 && r.height > 0 ? fit({ x: r.left, y: r.top, w: r.width, h: r.height }) : undefined
-}
-
-const initialGeo = (): Geo => savedGeo() ?? dockedGeo() ?? fit({ x: 60, y: 90, w: innerWidth - 560, h: innerHeight - 140 })
 
 function describe(sel: FileSel): string {
   return sel.area.kind === 'unstaged' ? 'Working Tree' : sel.area.kind === 'staged' ? 'Index' : short(sel.area.oid)
@@ -169,93 +133,22 @@ export function DiffWindow(p: {
   onChangePr?: (pr: PullRequest, action: PrChange) => void
   busy: boolean
 }) {
-  const [geo, setGeo] = useState<Geo>(initialGeo)
   const [max, setMax] = useState(false)
   const handles = useRef(new Map<string, PaneHandle>())
-  const dragged = useRef(false)
-  const moved = useRef(savedGeo() !== undefined)
   const strip = useRef<HTMLDivElement>(null)
   const current = p.tabs.find((t) => t.key === p.active) ?? p.tabs[0]
   const h = () => handles.current.get(current.key)
 
   useEffect(() => {
-    if (moved.current) localStorage.setItem(GEO_KEY, JSON.stringify(geo))
-  }, [geo])
-  useEffect(() => {
     strip.current?.querySelector('.tab.active')?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
   }, [current.key])
-  useEffect(() => {
-    const onResize = () => setGeo((g) => fit(g))
-    addEventListener('resize', onResize)
-    return () => removeEventListener('resize', onResize)
-  }, [])
-  useEffect(() => {
-    const area = graphArea()
-    if (!area) return
-    const follow = () => {
-      const g = !moved.current && dockedGeo()
-      if (g) setGeo(g)
-    }
-    const ro = new ResizeObserver(follow)
-    ro.observe(area)
-    return () => ro.disconnect()
-  }, [])
-
-  const track = (e: PointerEvent, apply: (dx: number, dy: number, start: Geo) => Geo) => {
-    dragged.current = false
-    if (e.button !== 0 || max) return
-    const sx = e.clientX
-    const sy = e.clientY
-    const start = geo
-    const move = (ev: PointerEvent) => {
-      const dx = ev.clientX - sx
-      const dy = ev.clientY - sy
-      if (!dragged.current && Math.hypot(dx, dy) < 4) return
-      dragged.current = true
-      document.body.classList.add('dragging')
-      setGeo(apply(dx, dy, start))
-    }
-    const up = () => {
-      removeEventListener('pointermove', move)
-      removeEventListener('pointerup', up)
-      document.body.classList.remove('dragging')
-      if (dragged.current) moved.current = true
-      setGeo((g) => fit(g))
-    }
-    addEventListener('pointermove', move)
-    addEventListener('pointerup', up)
-  }
-
-  const moveFrom = (e: PointerEvent) => {
-    if ((e.target as Element).closest('button')) return
-    track(e, (dx, dy, s) => ({ ...s, x: s.x + dx, y: s.y + dy }))
-  }
-
-  const resizeFrom = (edge: string) => (e: PointerEvent) => {
-    e.preventDefault()
-    track(e, (dx, dy, s) => {
-      const g = { ...s }
-      if (edge.includes('e')) g.w = Math.max(MIN_W, s.w + dx)
-      if (edge.includes('s')) g.h = Math.max(MIN_H, s.h + dy)
-      if (edge.includes('w')) {
-        g.w = Math.max(MIN_W, s.w - dx)
-        g.x = s.x + s.w - g.w
-      }
-      if (edge.includes('n')) {
-        g.h = Math.max(MIN_H, s.h - dy)
-        g.y = s.y + s.h - g.h
-      }
-      return g
-    })
-  }
 
   const toggle = (k: 'wrap' | 'collapse') => p.onOptions({ ...p.options, [k]: !p.options[k] })
   const parts = current.sel.path.split('/')
-  const style = max ? undefined : { left: `${geo.x}px`, top: `${geo.y}px`, width: `${geo.w}px`, height: `${geo.h}px` }
 
   return (
-    <div class={`diff-window ${max ? 'max' : ''}`} style={style} role="dialog" aria-label="Diff">
-      <div class="diff-tabs" onPointerDown={moveFrom} onDblClick={(e) => !(e.target as Element).closest('button, .tab') && setMax(!max)}>
+    <div class={`diff-window ${max ? 'max' : ''}`} role="region" aria-label="Diff">
+      <div class="diff-tabs" onDblClick={(e) => !(e.target as Element).closest('button, .tab') && setMax(!max)}>
         <div class="tab-strip" ref={strip}>
           {p.tabs.map((t) => {
             const name = t.pr ? `#${t.pr.number}` : t.sel.path.slice(t.sel.path.lastIndexOf('/') + 1)
@@ -267,7 +160,7 @@ export function DiffWindow(p: {
                 role="tab"
                 tabIndex={0}
                 aria-selected={t.key === current.key}
-                onClick={() => !dragged.current && p.onActivate(t.key)}
+                onClick={() => p.onActivate(t.key)}
                 onKeyDown={(e) => {
                   if (e.key !== 'Enter' && e.key !== ' ') return
                   e.preventDefault()
@@ -375,7 +268,6 @@ export function DiffWindow(p: {
         />
         ),
       )}
-      {!max && EDGES.map((edge) => <div key={edge} class={`edge ${edge}`} onPointerDown={resizeFrom(edge)} />)}
     </div>
   )
 }

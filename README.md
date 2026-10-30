@@ -40,7 +40,7 @@ Ramulus is Latin for a small branch.
 
 ![A diff window beside the commit box, with two change blocks staged and a commit message drafted by the AI agent](docs/screenshots/diff.png)
 
-- Every file you click opens as a tab in one diff window that fills the space beside the left panel and follows it as panels change. Move it, resize it from any edge, or maximize it. Unchanged regions are collapsed until you open them.
+- Every file you click opens as a tab in one diff view that takes the graph's place beside the left panel, or maximize it over the left panel too. Unchanged regions are collapsed until you open them.
 - The left panel has three tabs: Branches, Changes (the commit box, or the selected commit's files) and Files, which shows the whole working tree with changed files marked. A file opened from Files opens in a plain editor instead of a diff.
 - The diff runs on Monaco, the open-source editor component: side by side or inline, a +/− gutter, folded unchanged regions, syntax highlighting and word wrap.
 - Stage, unstage or discard one change block from the small toolbar beside it. Edit the working-tree side and save with ⌘S.
