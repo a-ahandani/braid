@@ -106,6 +106,7 @@ export function App(p: { be: Backend; active: boolean; theme: Theme; onTheme: (t
   const [sel, setSel] = useState<Sel>()
   const [diffTabs, setDiffTabs] = useState<DiffTab[]>([])
   const [activeDiff, setActiveDiff] = useState<string>()
+  const [onGraph, setOnGraph] = useState(false)
   const [commitFiles, setCommitFiles] = useState<FileChange[]>([])
   const [diffOptions, setDiffOptionsState] = useState<DiffOptions>(() => ({ wrap: stored('ramulus.wrap') === '1', mode: stored('ramulus.diff') === 'inline' ? 'inline' : 'split', collapse: stored('ramulus.collapse') !== '0' }))
   const setDiffOptions = (o: DiffOptions) => {
@@ -391,6 +392,7 @@ export function App(p: { be: Backend; active: boolean; theme: Theme; onTheme: (t
     if (soloInfo && !soloInfo.indices.includes(i)) setSolo(new Set())
     select(i)
     setScrollTo(i)
+    setOnGraph(true)
   }
 
   const copy = (s: string) => {
@@ -796,20 +798,24 @@ export function App(p: { be: Backend; active: boolean; theme: Theme; onTheme: (t
   }
   const activeTab = diffTabs.find((t) => t.key === activeDiff) ?? diffTabs[0]
   const fileSel = activeTab?.sel
+  const showTab = (key: string) => {
+    setActiveDiff(key)
+    setOnGraph(false)
+  }
   const openFile = (f: FileSel) => {
     const key = tabKey(f)
     setDiffTabs((ts) => (ts.some((t) => t.key === key) ? ts : [...ts, { key, sel: f, dirty: false }]))
-    setActiveDiff(key)
+    showTab(key)
   }
   const openPr = (pr: PullRequest) => {
     const key = `pr:${pr.number}`
     setDiffTabs((ts) => (ts.some((t) => t.key === key) ? ts : [...ts, { key, sel: { area: { kind: 'unstaged' }, path: `#${pr.number}` }, dirty: false, pr }]))
-    setActiveDiff(key)
+    showTab(key)
   }
   const openWorkFile = (path: string) => {
     const key = `file:${path}`
     setDiffTabs((ts) => (ts.some((t) => t.key === key) ? ts : [...ts, { key, sel: { area: { kind: 'unstaged' }, path }, dirty: false, file: true }]))
-    setActiveDiff(key)
+    showTab(key)
   }
   const dropTab = (key: string) => {
     const i = diffTabs.findIndex((t) => t.key === key)
@@ -920,7 +926,7 @@ export function App(p: { be: Backend; active: boolean; theme: Theme; onTheme: (t
         toggleAgent()
         return
       }
-      if (e.target instanceof Element && e.target.closest('.diff-window, .agent-drawer')) return
+      if (e.target instanceof Element && e.target.closest('.diff-pane, .agent-drawer')) return
       const mod = e.metaKey || e.ctrlKey
       const typing = e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || (e.target instanceof HTMLElement && e.target.isContentEditable)
       if (mod && (e.key === 'p' || e.key === 'P')) {
@@ -1272,12 +1278,15 @@ export function App(p: { be: Backend; active: boolean; theme: Theme; onTheme: (t
           <DiffWindow
             tabs={diffTabs}
             active={activeTab.key}
+            shown={p.active}
             be={v.be}
             stamp={v}
             options={diffOptions}
             look={look}
             actionsFor={actionsFor}
-            onActivate={setActiveDiff}
+            onActivate={showTab}
+            onGraph={onGraph}
+            onShowGraph={() => setOnGraph(true)}
             onCloseTab={closeTab}
             onCloseAll={closeAllTabs}
             onOptions={setDiffOptions}

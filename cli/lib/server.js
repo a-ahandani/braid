@@ -5,7 +5,7 @@ import { homedir } from 'node:os'
 import { basename, dirname, extname, join, normalize, resolve } from 'node:path'
 import * as ai from './ai.js'
 import * as git from './git.js'
-import { changePullRequest, mergePullRequest, pullRequest, pullRequests } from './prs.js'
+import { changePullRequest, mergePullRequest, prConversation, pullRequest, pullRequests } from './prs.js'
 import { createTerminals } from './term.js'
 
 const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.png': 'image/png', '.json': 'application/json' }
@@ -22,6 +22,7 @@ const OPS = {
   prs: (dir) => pullRequests(dir),
   prMerge: (dir, b) => mergePullRequest(dir, b.number, b.method),
   prView: (dir, b) => pullRequest(dir, b.number),
+  prConversation: (dir, b) => prConversation(dir, b.number),
   prChange: (dir, b) => changePullRequest(dir, b.number, b.action),
   status: (dir) => git.status(dir),
   commitFiles: (dir, b) => git.commitFiles(dir, b.oid),

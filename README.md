@@ -18,7 +18,7 @@ Run it inside any git repository, or pass a path: `npx ramulus ~/code/app`. Run 
 
 - **Visual control while your agent codes.** Let Claude Code, Codex, Gemini CLI or opencode write the code in a panel beside the graph. Every edit shows up as a diff and every branch as a lane, so you review what it did and choose what to stage and commit.
 - **Your git, unchanged.** Every operation runs through the git binary you already use, so SSH keys, credential helpers, hooks and LFS behave exactly as they do in the terminal.
-- **Nothing leaves your machine unless you ask.** The server listens on 127.0.0.1 and every request carries a per-run token. The only outside requests are your own git remotes, avatar lookups on gravatar.com, pull request lookups through the GitHub CLI when you have it installed, and, if you turn it on, the AI agent you already use.
+- **Nothing leaves your machine unless you ask.** The server listens on 127.0.0.1 and every request carries a per-run token. The only outside requests are your own git remotes, avatar lookups on gravatar.com, pull request lookups through the GitHub CLI when you have it installed, the images, videos and avatars of a pull request you open, which load only from GitHub's own hosts, and, if you turn it on, the AI agent you already use.
 - **One command.** No installer, no sign-in, no license key. Close the terminal and it is gone.
 
 Ramulus is Latin for a small branch.
@@ -40,7 +40,7 @@ Ramulus is Latin for a small branch.
 
 ![A diff window beside the commit box, with two change blocks staged and a commit message drafted by the AI agent](docs/screenshots/diff.png)
 
-- Every file you click opens as a tab in one diff view that takes the graph's place beside the left panel, or maximize it over the left panel too. Unchanged regions are collapsed until you open them.
+- Every file you click opens as a tab in one diff view that takes the graph's place beside the left panel, or maximize it over the left panel too. The graph stays one click away as the first tab. Unchanged regions are collapsed until you open them.
 - The left panel has three tabs: Branches, Changes (the commit box, or the selected commit's files) and Files, which shows the whole working tree with changed files marked. A file opened from Files opens in a plain editor instead of a diff.
 - The diff runs on Monaco, the open-source editor component: side by side or inline, a +/− gutter, folded unchanged regions, syntax highlighting and word wrap.
 - Stage, unstage or discard one change block from the small toolbar beside it. Edit the working-tree side and save with ⌘S.
@@ -52,7 +52,7 @@ Ramulus is Latin for a small branch.
 
 - Open several repositories at once from recent repositories, the system folder picker, a typed path, or the repositories found in the folder you started from. They live in a left sidebar that stays docked or auto-hides, with pinned repositories at the top and ⌘⇧A to search. Each one shows its branch, its uncommitted changes and what it has to push or pull. Each one keeps its own selection, filters and draft commit message.
 - Pull all (fast-forward only) and Fetch all update every open repository, three at a time so the app stays responsive.
-- Branches with a pull request on GitHub show its number. Click it to open the pull request in Ramulus: description, checks (refreshing while they run), reviews, comments, commits and changed files, with GitHub's Merge options (merge commit, squash, rebase). It all goes through the GitHub CLI (`gh`) you are already signed in to, links and markdown from GitHub are sanitized and images are not loaded, and Ramulus fetches after a merge so it shows in the graph.
+- Branches with a pull request on GitHub show its number. Click it to open the pull request in Ramulus: description with its images and videos, checks (refreshing while they run), and one timeline of comments, reviews and review threads, each thread shown with the lines of code it is about, with GitHub's Merge options (merge commit, squash, rebase). Resolved threads and bot comments fold away. It all goes through the GitHub CLI (`gh`) you are already signed in to, what GitHub sends is sanitized, media loads only from GitHub's own hosts so tracking pixels stay out, and Ramulus fetches after a merge so it shows in the graph.
 - Rebase with uncommitted changes: they are stashed and put back for you, and the rebase can be undone afterwards. A rejected push offers rebase, merge or a safe force push instead of an error.
 - Only the visible tab watches its folder, so hidden tabs cost nothing and catch up when you come back.
 - Light and dark themes, or any color scheme from [terminalcolors.com](https://terminalcolors.com/): paste the link of its page and the whole app, the diff and the agent terminal take its colors.
