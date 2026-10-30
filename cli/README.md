@@ -1,6 +1,6 @@
 # Ramulus
 
-A local-first Git GUI. Every branch in one graph, editor-grade diffs, and your repositories in tabs. No account, no cloud, no telemetry.
+Super visual Git for vibe coding. Your AI agent writes the code; you see every branch and every change, and decide what lands. Every branch in one graph, editor-grade diffs, and your repositories in a sidebar. No account, no cloud, no telemetry.
 
 ```sh
 npx ramulus            # in a repository
