@@ -462,6 +462,7 @@ select {
 
 
 .body {
+  position: relative;
   display: grid;
   grid-template-columns: var(--left-w, 380px) 5px minmax(0, 1fr);
   min-height: 0;
@@ -1641,94 +1642,25 @@ kbd {
   text-align: center;
 }
 
+/* Absolute, so it sits in the graph's grid cell without taking part in auto-placement. */
 .diff-window {
-  position: fixed;
-  z-index: 30;
+  position: absolute;
+  inset: 0;
+  grid-area: 1 / 3;
+  z-index: 1;
   display: flex;
   flex-direction: column;
   background: var(--bg);
-  border: 1px solid var(--menu-border);
-  border-radius: 6px;
-  box-shadow: 0 8px 24px var(--shadow);
   overflow: hidden;
 }
 
 .diff-window.max {
-  inset: 8px;
+  grid-column: 1 / -1;
 }
 
 body.dragging,
 body.dragging * {
   user-select: none;
-}
-
-.diff-window .edge {
-  position: absolute;
-  z-index: 6;
-}
-
-.diff-window .edge.n,
-.diff-window .edge.s {
-  left: 8px;
-  right: 8px;
-  height: 5px;
-  cursor: ns-resize;
-}
-
-.diff-window .edge.e,
-.diff-window .edge.w {
-  top: 8px;
-  bottom: 8px;
-  width: 5px;
-  cursor: ew-resize;
-}
-
-.diff-window .edge.n {
-  top: 0;
-}
-
-.diff-window .edge.s {
-  bottom: 0;
-}
-
-.diff-window .edge.e {
-  right: 0;
-}
-
-.diff-window .edge.w {
-  left: 0;
-}
-
-.diff-window .edge.ne,
-.diff-window .edge.nw,
-.diff-window .edge.se,
-.diff-window .edge.sw {
-  width: 12px;
-  height: 12px;
-}
-
-.diff-window .edge.ne {
-  top: 0;
-  right: 0;
-  cursor: nesw-resize;
-}
-
-.diff-window .edge.sw {
-  bottom: 0;
-  left: 0;
-  cursor: nesw-resize;
-}
-
-.diff-window .edge.nw {
-  top: 0;
-  left: 0;
-  cursor: nwse-resize;
-}
-
-.diff-window .edge.se {
-  bottom: 0;
-  right: 0;
-  cursor: nwse-resize;
 }
 
 .diff-pane {
@@ -1758,11 +1690,6 @@ body.dragging * {
   background: var(--side);
   border-bottom: 1px solid var(--line);
   flex: none;
-  cursor: grab;
-}
-
-.diff-window.max .diff-tabs {
-  cursor: default;
 }
 
 .diff-tabs .tab-strip {
@@ -2268,10 +2195,6 @@ button.sb-empty.open {
 
 .app.drawer-max > .body {
   display: none;
-}
-
-.app.drawer-max .agent-drawer {
-  z-index: 31;
 }
 
 .term-tabs {

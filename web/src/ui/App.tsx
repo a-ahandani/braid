@@ -144,6 +144,7 @@ export function App(p: { be: Backend; active: boolean; theme: Theme; onTheme: (t
   const [termRunning, setTermRunning] = useState<Record<string, boolean>>({})
   const termSeq = useRef(0)
   const [drawerShown, setDrawerShown] = useState(false)
+  const [termFocus, setTermFocus] = useState(false)
   const [drawerMax, setDrawerMax] = useState(false)
   const [drawerH, setDrawerH] = useState(() => Number(stored('ramulus.drawer')) || 280)
   const [paste, setPaste] = useState<{ id: number; text: string; tab: string }>()
@@ -473,11 +474,17 @@ export function App(p: { be: Backend; active: boolean; theme: Theme; onTheme: (t
     return same.length > 1 ? `${name} ${same.findIndex((x) => x.id === t.id) + 1}` : name
   }
 
+  // Only explicit opens take the keyboard, not the remount that comes with switching repositories.
+  const showTerm = (id: string) => {
+    setTermActive(id)
+    setDrawerShown(true)
+    setTermFocus(true)
+  }
+
   const addTerm = (kind: TermKind, agent?: string) => {
     const t = { id: `${PAGE_TAG}-${++termSeq.current}`, kind, agent }
     setTerms((ts) => [...ts, t])
-    setTermActive(t.id)
-    setDrawerShown(true)
+    showTerm(t.id)
     return t
   }
 
@@ -485,14 +492,13 @@ export function App(p: { be: Backend; active: boolean; theme: Theme; onTheme: (t
     const picked = await pickAgent().catch((e) => void say(e))
     if (!picked) return
     const t = (activeTerm?.kind === 'agent' ? activeTerm : terms.findLast((x) => x.kind === 'agent')) ?? addTerm('agent', picked.agent)
-    setTermActive(t.id)
-    setDrawerShown(true)
+    showTerm(t.id)
     if (conflictFile) setPaste({ id: Date.now(), tab: t.id, text: fillPrompt(picked.settings.prompts.conflict || DEFAULT_PROMPTS.conflict, conflictFile) })
   }
 
   const toggleAgent = async () => {
     if (drawerShown) return setDrawerShown(false)
-    if (terms.length) return setDrawerShown(true)
+    if (activeTerm) return showTerm(activeTerm.id)
     if (!p.be.termStart || !p.be.ai) return setToast('Run npx ramulus in a repository to use your AI agent here')
     const info = await p.be.ai().catch(() => undefined)
     if (info && (info.settings.enabled === false || info.agents.length === 0)) return openAiSettings()
@@ -1262,6 +1268,27 @@ export function App(p: { be: Backend; active: boolean; theme: Theme; onTheme: (t
           onScrolled={() => setScrollTo(undefined)}
           onClearSolo={() => setSolo(new Set())}
         />
+        {activeTab && (
+          <DiffWindow
+            tabs={diffTabs}
+            active={activeTab.key}
+            be={v.be}
+            stamp={v}
+            options={diffOptions}
+            look={look}
+            actionsFor={actionsFor}
+            onActivate={setActiveDiff}
+            onCloseTab={closeTab}
+            onCloseAll={closeAllTabs}
+            onOptions={setDiffOptions}
+            onDirty={setTabDirty}
+            onSave={saveFile}
+            onOpen={v.be.openPath ? (f) => v.be.openPath!(f.path).catch((err) => fail('Could not open the file', err)) : undefined}
+            onMergePr={v.be.prMerge ? mergePr : undefined}
+            onChangePr={v.be.prChange ? changePr : undefined}
+            busy={!!busy}
+          />
+        )}
       </div>
       {activeTerm && drawerShown && p.active && (
         <div class="agent-drawer" style={drawerMax ? undefined : { height: `${drawerH}px` }}>
@@ -1276,8 +1303,8 @@ export function App(p: { be: Backend; active: boolean; theme: Theme; onTheme: (t
                   aria-selected={t.id === activeTerm.id}
                   class={`term-tab ${t.id === activeTerm.id ? 'active' : ''} ${termRunning[t.id] === false ? 'stopped' : ''}`}
                   title={termRunning[t.id] === false ? `${termLabel(t)} (stopped)` : termLabel(t)}
-                  onClick={() => setTermActive(t.id)}
-                  onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && setTermActive(t.id)}
+                  onClick={() => showTerm(t.id)}
+                  onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && showTerm(t.id)}
                 >
                   <Icon name={t.kind === 'shell' ? 'terminal' : 'sparkle'} />
                   <span class="label">{termLabel(t)}</span>
@@ -1319,6 +1346,8 @@ export function App(p: { be: Backend; active: boolean; theme: Theme; onTheme: (t
             kind={activeTerm.kind}
             agent={activeTerm.agent}
             look={look}
+            focus={termFocus}
+            onFocused={() => setTermFocus(false)}
             paste={paste?.tab === activeTerm.id ? paste : undefined}
             restart={restart.tab === activeTerm.id ? restart.n : 0}
             onState={(st) => setTermRunning((m) => ({ ...m, [activeTerm.id]: st.running }))}
@@ -1336,27 +1365,6 @@ export function App(p: { be: Backend; active: boolean; theme: Theme; onTheme: (t
         />
       )}
       {shortcuts && <Shortcuts onClose={() => setShortcuts(false)} />}
-      {activeTab && (
-        <DiffWindow
-          tabs={diffTabs}
-          active={activeTab.key}
-          be={v.be}
-          stamp={v}
-          options={diffOptions}
-          look={look}
-          actionsFor={actionsFor}
-          onActivate={setActiveDiff}
-          onCloseTab={closeTab}
-          onCloseAll={closeAllTabs}
-          onOptions={setDiffOptions}
-          onDirty={setTabDirty}
-          onSave={saveFile}
-          onOpen={v.be.openPath ? (f) => v.be.openPath!(f.path).catch((err) => fail('Could not open the file', err)) : undefined}
-          onMergePr={v.be.prMerge ? mergePr : undefined}
-          onChangePr={v.be.prChange ? changePr : undefined}
-          busy={!!busy}
-        />
-      )}
       {dialog && (
         <Dialogs
           dialog={dialog}
