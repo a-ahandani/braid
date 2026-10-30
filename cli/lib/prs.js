@@ -40,7 +40,7 @@ export function pullRequests(dir, env = process.env) {
   return list
 }
 
-const VIEW_FIELDS = 'number,title,body,state,isDraft,author,headRefName,baseRefName,url,createdAt,reviewDecision,mergeStateStatus,statusCheckRollup,reviews,comments'
+const VIEW_FIELDS = 'number,title,body,state,isDraft,author,headRefName,baseRefName,url,createdAt,reviewDecision,mergeStateStatus,statusCheckRollup'
 const STATUS = { SUCCESS: 'pass', FAILURE: 'fail', ERROR: 'fail', PENDING: 'running', EXPECTED: 'running' }
 const CONCLUSION = { SUCCESS: 'pass', FAILURE: 'fail', TIMED_OUT: 'fail', ACTION_REQUIRED: 'fail', STARTUP_FAILURE: 'fail', CANCELLED: 'cancelled' }
 
@@ -55,16 +55,18 @@ const forget = (dir) => {
   for (const k of [...views.keys()]) if (k.startsWith(`${dir}\n`)) views.delete(k)
 }
 
-export function pullRequest(dir, number, env = process.env) {
+function fresh(k, number, read) {
   if (!Number.isInteger(number) || number < 1) return Promise.reject(new Error('Invalid pull request number'))
-  const k = `${dir}\n${number}`
   const hit = views.get(k)
   if (hit && Date.now() - hit.at < VIEW_FRESH_MS) return hit.view
-  const view = readPullRequest(dir, number, env)
+  const view = read()
   views.set(k, { at: Date.now(), view })
   view.catch(() => views.get(k)?.view === view && views.delete(k))
   return view
 }
+
+export const pullRequest = (dir, number, env = process.env) => fresh(`${dir}\n${number}`, number, () => readPullRequest(dir, number, env))
+export const prConversation = (dir, number, env = process.env) => fresh(`${dir}\n${number}\nconversation`, number, () => readConversation(dir, number, env))
 
 async function readPullRequest(dir, number, env) {
   const v = JSON.parse(await ghSignedIn(['pr', 'view', String(number), '--json', VIEW_FIELDS], dir, env))
@@ -81,8 +83,38 @@ async function readPullRequest(dir, number, env) {
     reviewDecision: v.reviewDecision ?? '',
     mergeState: v.mergeStateStatus ?? '',
     checks: (v.statusCheckRollup ?? []).map((c) => ({ name: c.name ?? c.context ?? 'Check', workflow: c.workflowName ?? '', state: checkState(c), url: c.detailsUrl ?? c.targetUrl ?? '' })),
-    reviews: (v.reviews ?? []).map((r) => ({ author: who(r.author), state: r.state, body: r.body ?? '', at: r.submittedAt })),
-    comments: (v.comments ?? []).map((c) => ({ author: who(c.author), body: c.body ?? '', at: c.createdAt })),
+  }
+}
+
+const NOTE = 'id body bodyHTML url author{__typename login avatarUrl(size:56)}'
+// shortcut: reads the newest 100 of each list and 50 replies per thread, page through them if a pull request outgrows that.
+const CONVERSATION = `query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){pullRequest(number:$number){
+  body
+  bodyHTML
+  author{avatarUrl(size:56)}
+  comments(last:100){nodes{${NOTE} createdAt}}
+  reviews(last:100){nodes{${NOTE} state submittedAt}}
+  reviewThreads(last:100){nodes{id path line startLine originalLine originalStartLine isResolved isOutdated comments(first:50){nodes{${NOTE} createdAt diffHunk}}}}
+}}}`
+
+const note = (n) => ({ id: n.id, author: who(n.author), avatar: n.author?.avatarUrl ?? '', bot: n.author?.__typename === 'Bot', text: n.body ?? '', html: n.bodyHTML ?? '', url: n.url, at: n.createdAt ?? n.submittedAt })
+
+async function readConversation(dir, number, env) {
+  const { url } = await pullRequest(dir, number, env)
+  const { hostname, pathname } = new URL(url)
+  const [, owner, name] = pathname.split('/')
+  const out = await ghSignedIn(['api', 'graphql', '--hostname', hostname, '-f', `query=${CONVERSATION}`, '-f', `owner=${owner}`, '-f', `name=${name}`, '-F', `number=${number}`], dir, env)
+  const pr = JSON.parse(out).data.repository.pullRequest
+  return {
+    text: pr.body ?? '',
+    html: pr.bodyHTML ?? '',
+    avatar: pr.author?.avatarUrl ?? '',
+    comments: pr.comments.nodes.map(note),
+    // A COMMENTED review with no text only wraps its inline comments, which already show as threads.
+    reviews: pr.reviews.nodes.filter((r) => r.state !== 'PENDING' && (r.state !== 'COMMENTED' || r.body?.trim())).map((r) => ({ ...note(r), state: r.state })),
+    threads: pr.reviewThreads.nodes
+      .filter((t) => t.comments.nodes.length)
+      .map((t) => ({ id: t.id, path: t.path, line: t.line ?? t.originalLine, startLine: t.startLine ?? t.originalStartLine, resolved: t.isResolved, outdated: t.isOutdated, hunk: t.comments.nodes[0].diffHunk ?? '', notes: t.comments.nodes.map(note) })),
   }
 }
 

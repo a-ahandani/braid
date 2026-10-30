@@ -117,12 +117,15 @@ function DiffPane(p: {
 export function DiffWindow(p: {
   tabs: DiffTab[]
   active: string
+  shown: boolean
   be: Backend
   stamp: unknown
   options: DiffOptions
   look: string
   actionsFor: (sel: FileSel) => ChunkAction[]
   onActivate: (key: string) => void
+  onGraph: boolean
+  onShowGraph: () => void
   onCloseTab: (key: string) => void
   onCloseAll: () => void
   onOptions: (o: DiffOptions) => void
@@ -138,28 +141,45 @@ export function DiffWindow(p: {
   const strip = useRef<HTMLDivElement>(null)
   const current = p.tabs.find((t) => t.key === p.active) ?? p.tabs[0]
   const h = () => handles.current.get(current.key)
+  const live = (key: string) => !p.onGraph && key === current.key
 
   useEffect(() => {
     strip.current?.querySelector('.tab.active')?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
-  }, [current.key])
+  }, [current.key, p.onGraph])
 
   const toggle = (k: 'wrap' | 'collapse') => p.onOptions({ ...p.options, [k]: !p.options[k] })
   const parts = current.sel.path.split('/')
 
   return (
-    <div class={`diff-window ${max ? 'max' : ''}`} role="region" aria-label="Diff">
-      <div class="diff-tabs" onDblClick={(e) => !(e.target as Element).closest('button, .tab') && setMax(!max)}>
+    <div class={`diff-window ${p.onGraph ? 'on-graph' : max ? 'max' : ''}`} role="region" aria-label="Diff">
+      <div class="diff-tabs" onDblClick={(e) => !p.onGraph && !(e.target as Element).closest('button, .tab') && setMax(!max)}>
+        <div
+          class={`tab pinned ${p.onGraph ? 'active' : ''}`}
+          title="The commit graph"
+          role="tab"
+          tabIndex={0}
+          aria-selected={p.onGraph}
+          onClick={p.onShowGraph}
+          onKeyDown={(e) => {
+            if (e.key !== 'Enter' && e.key !== ' ') return
+            e.preventDefault()
+            p.onShowGraph()
+          }}
+        >
+          <Icon name="git-commit" />
+          <span class="name">Graph</span>
+        </div>
         <div class="tab-strip" ref={strip}>
           {p.tabs.map((t) => {
             const name = t.pr ? `#${t.pr.number}` : t.sel.path.slice(t.sel.path.lastIndexOf('/') + 1)
             return (
               <div
                 key={t.key}
-                class={`tab ${t.key === current.key ? 'active' : ''} ${t.dirty ? 'dirty' : ''}`}
+                class={`tab ${live(t.key) ? 'active' : ''} ${t.dirty ? 'dirty' : ''}`}
                 title={t.pr ? t.pr.title : t.file ? t.sel.path : `${t.sel.path} (${describe(t.sel)})`}
                 role="tab"
                 tabIndex={0}
-                aria-selected={t.key === current.key}
+                aria-selected={live(t.key)}
                 onClick={() => p.onActivate(t.key)}
                 onKeyDown={(e) => {
                   if (e.key !== 'Enter' && e.key !== ' ') return
@@ -248,8 +268,8 @@ export function DiffWindow(p: {
       )}
       {p.tabs.map((t) =>
         t.pr ? (
-          <div key={t.key} class="diff-pane" hidden={t.key !== current.key}>
-            <PrView be={p.be} pr={t.pr} active={t.key === current.key} stamp={p.stamp} busy={p.busy} onMerge={p.onMergePr} onChange={p.onChangePr} />
+          <div key={t.key} class="diff-pane" hidden={!live(t.key)}>
+            <PrView be={p.be} pr={t.pr} active={p.shown && live(t.key)} stamp={p.stamp} busy={p.busy} onMerge={p.onMergePr} onChange={p.onChangePr} />
           </div>
         ) : (
         <DiffPane
@@ -257,7 +277,7 @@ export function DiffWindow(p: {
           tab={t}
           be={p.be}
           stamp={p.stamp}
-          active={t.key === current.key}
+          active={live(t.key)}
           options={p.options}
           look={p.look}
           actions={p.actionsFor(t.sel)}

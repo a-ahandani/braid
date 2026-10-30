@@ -44,6 +44,7 @@ export function httpBackend(base: string, token: string, repo?: string): Backend
     prs: () => call('prs'),
     prMerge: (number, method) => call('prMerge', { number, method }),
     prView: (number) => call('prView', { number }),
+    prConversation: (number) => call('prConversation', { number }),
     prChange: (number, action) => call('prChange', { number, action }),
     commitFiles: (oid) => call('commitFiles', { oid }),
     fileVersions: (area, path) => call('fileVersions', { area, path }),

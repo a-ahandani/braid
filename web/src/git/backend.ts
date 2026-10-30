@@ -60,8 +60,37 @@ export interface PullRequestDetail {
   reviewDecision: string
   mergeState: string
   checks: { name: string; workflow: string; state: CheckState; url: string }[]
-  reviews: { author: string; state: string; body: string; at: string }[]
-  comments: { author: string; body: string; at: string }[]
+}
+
+export interface PrNote {
+  id: string
+  author: string
+  avatar: string
+  bot: boolean
+  text: string
+  html: string
+  url: string
+  at: string
+}
+
+export interface PrThread {
+  id: string
+  path: string
+  line: number | null
+  startLine: number | null
+  resolved: boolean
+  outdated: boolean
+  hunk: string
+  notes: PrNote[]
+}
+
+export interface PrConversation {
+  text: string
+  html: string
+  avatar: string
+  comments: PrNote[]
+  reviews: (PrNote & { state: string })[]
+  threads: PrThread[]
 }
 
 export interface PullRequest {
@@ -80,6 +109,7 @@ export interface Backend {
   prs?(): Promise<PullRequest[]>
   prMerge?(number: number, method: MergeMethod): Promise<void>
   prView?(number: number): Promise<PullRequestDetail>
+  prConversation?(number: number): Promise<PrConversation>
   prChange?(number: number, action: PrChange): Promise<void>
   commitFiles(oid: string): Promise<FileChange[]>
   fileVersions(area: DiffArea, path: string): Promise<FileVersions>
