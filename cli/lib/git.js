@@ -339,7 +339,8 @@ export async function findRepos(root, depth = 3, limit = 100) {
 
 const PICKERS = {
   darwin: ['osascript', ['-e', 'POSIX path of (choose folder with prompt "Open a repository")']],
-  win32: ['powershell', ['-NoProfile', '-Command', "Add-Type -AssemblyName System.Windows.Forms; $d = New-Object System.Windows.Forms.FolderBrowserDialog; if ($d.ShowDialog() -eq 'OK') { $d.SelectedPath }"]],
+  // the hidden TopMost owner keeps the dialog above the browser; without one Windows opens it behind
+  win32: ['powershell', ['-NoProfile', '-Command', "Add-Type -AssemblyName System.Windows.Forms; $d = New-Object System.Windows.Forms.FolderBrowserDialog; if ($d.ShowDialog((New-Object System.Windows.Forms.Form -Property @{TopMost = $true})) -eq 'OK') { $d.SelectedPath }"]],
 }
 
 export function pickFolder() {
